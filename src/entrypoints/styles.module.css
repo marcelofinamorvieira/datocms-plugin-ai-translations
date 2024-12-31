@@ -1,0 +1,110 @@
+.modelSelect {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 16px 0px;
+}
+
+.optionContainer {
+  display: flex;
+  gap: 8px;
+  font-size: var(--font-size-xxs);
+  justify-content: right;
+  align-items: center;
+  margin-top: -8px;
+  margin-bottom: -24px;
+  height: 50px;
+  overflow: hidden;
+}
+
+.buttonsContainer {
+  display: flex;
+  user-select: none;
+  gap: 4px;
+}
+
+.promptBar {
+  width: 100%;
+  gap: 4px;
+  display: flex;
+  margin-bottom: 24px;
+}
+
+.dropdown {
+  height: 100%;
+  font-size: medium;
+}
+
+.promptButton {
+  height: 100%;
+}
+
+.imageGrid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  grid-template-rows: repeat(2, 1fr);
+  gap: 10px;
+}
+
+.tooltipConfig {
+  background-color: #e6f7ff;
+  border: 1px solid #91d5ff;
+  border-radius: 4px;
+  padding: 8px 12px;
+  font-size: 14px;
+  color: #1890ff;
+  display: inline-block;
+}
+
+.buttons {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.configContainer {
+  max-width: 650px;
+  margin: 0 auto;
+  padding: var(--spacing-l) var(--spacing-xxxl);
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.textarea {
+  width: 96%;
+  border: 1px solid #d0cece89;
+  padding: 12px;
+  resize: none;
+  outline: none;
+  font-family: inherit;
+  font-size: inherit;
+}
+
+.label {
+  color: var(--light-body-color);
+}
+
+.hint {
+  font-size: var(--font-size-xs);
+  color: var(--light-body-color);
+}
+
+.fieldLabelTitle {
+  font-size: var(--font-size-xl);
+  font-weight: 600;
+  color: var(--base-body-color);
+  margin-top: 16px;
+}
+
+.fieldLabelHint {
+  margin-top: -16px;
+  font-size: var(--font-size-m);
+  color: var(--light-body-color);
+  margin-bottom: 16px;
+}
+
+.switchField {
+  margin-top: 16px;
+}
