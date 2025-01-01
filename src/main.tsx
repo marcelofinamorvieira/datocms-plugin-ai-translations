@@ -188,19 +188,20 @@ connect({
         ctx,
         pluginParams,
         ctx.locale,
+        locale,
         fieldType
       );
       ctx.notice('Translated field from ' + localeSelect(locale)?.name);
       return;
     } else if (actionId.includes('translateTo')) {
-      await ctx.updateFieldAppearance(ctx.field.id, [
-        {
-          operation: 'insertAddon',
-          index: 0,
-          fieldExtensionId: 'datoGptPrompt',
-          parameters: {},
-        },
-      ]);
+      // await ctx.updateFieldAppearance(ctx.field.id, [
+      //   {
+      //     operation: 'insertAddon',
+      //     index: 0,
+      //     fieldExtensionId: 'datoGptPrompt',
+      //     parameters: {},
+      //   },
+      // ]);
       const locale = actionId.split('.')[1];
       if (locale === 'allLocales') {
         for (let i = 0; i < locales.length; i++) {
@@ -210,6 +211,7 @@ connect({
             ctx,
             pluginParams,
             locales[i],
+            ctx.locale,
             fieldType
           );
         }
@@ -221,6 +223,7 @@ connect({
         ctx,
         pluginParams,
         locale,
+        ctx.locale,
         fieldType
       );
       ctx.notice('Translated field to ' + localeSelect(locale)?.name);

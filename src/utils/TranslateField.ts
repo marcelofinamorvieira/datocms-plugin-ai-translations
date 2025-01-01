@@ -8,24 +8,6 @@ import { fieldPrompt } from '../prompts/FieldPrompts';
 const localeSelect = locale.getByTag;
 
 /**
- * Fields that do not require translation. These field types are inherently language-neutral.
- */
-export const fieldsThatDontNeedTranslation = [
-  'date_picker',
-  'date_time_picker',
-  'integer',
-  'float',
-  'boolean',
-  'map',
-  'color_picker',
-  'file',
-  'gallery',
-  'link_select',
-  'links_select',
-  'video',
-];
-
-/**
  * Extracts text values from structured data. It searches through objects/arrays
  * recursively and collects all 'text' properties.
  *
@@ -154,6 +136,7 @@ async function translateSeoFieldValue(
   fieldValue: unknown,
   pluginParams: ctxParamsType,
   toLocale: string,
+  fromLocale: string,
   openai: OpenAI,
   fieldTypePrompt: string
 ) {
@@ -163,17 +146,18 @@ async function translateSeoFieldValue(
     description: seoObject.description,
   };
 
+  let FormattedPrompt = pluginParams.prompt
+    .replace('{fieldValue}', JSON.stringify(seoObjectToBeTranslated))
+    .replace('{fromLocale}', localeSelect(fromLocale).name)
+    .replace('{toLocale}', localeSelect(toLocale).name);
+
+  FormattedPrompt += '\n' + fieldTypePrompt;
+
   const seoCompletion = await openai.chat.completions.create({
     messages: [
       {
         role: 'system',
-        content:
-          pluginParams.prompt +
-          ' translate the following string\n' +
-          JSON.stringify(seoObjectToBeTranslated) +
-          ' to the language ' +
-          localeSelect(toLocale).name +
-          fieldTypePrompt,
+        content: FormattedPrompt,
       },
     ],
     model: pluginParams.gptModel,
@@ -201,6 +185,7 @@ async function translateBlockValue(
   fieldValue: unknown,
   pluginParams: ctxParamsType,
   toLocale: string,
+  fromLocale: string,
   openai: OpenAI,
   apiToken: string,
   _options?: {
@@ -240,6 +225,7 @@ async function translateBlockValue(
         block[field],
         pluginParams,
         toLocale,
+        fromLocale,
         fieldTypeDictionary[field],
         openai,
         nestedFieldValuePrompt,
@@ -266,6 +252,7 @@ async function translateStructuredTextValue(
   fieldValue: unknown,
   pluginParams: ctxParamsType,
   toLocale: string,
+  fromLocale: string,
   openai: OpenAI,
   apiToken: string
 ) {
@@ -290,17 +277,27 @@ async function translateStructuredTextValue(
   const textValues = extractTextValues(fieldValueWithoutBlocks);
 
   // Translate inline text array using OpenAI
+
+  let FormattedPrompt = pluginParams.prompt
+    .replace(
+      '{fieldValue}',
+      'translate the following string array ' +
+        JSON.stringify(textValues, null, 2)
+    )
+    .replace('{fromLocale}', localeSelect(fromLocale).name)
+    .replace('{toLocale}', localeSelect(toLocale).name);
+
+  FormattedPrompt +=
+    '\n' +
+    'Return the translated strings array in a valid JSON format do not remove spaces or empty strings. The number of returned strings should be the same as the number of strings in the original array.' +
+    '\n' +
+    'Return the translated strings array in a valid JSON format do not remove spaces or empty strings. The number of returned strings should be the same as the number of strings in the original array.';
+
   const structuredTextcompletion = await openai.chat.completions.create({
     messages: [
       {
         role: 'system',
-        content:
-          pluginParams.prompt +
-          ' translate the following string array ' +
-          JSON.stringify(textValues, null, 2) +
-          ' to the language ' +
-          localeSelect(toLocale).name +
-          ' return the translated strings array in a valid JSON format do not remove spaces or empty strings. The number of returned strings should be the same as the number of strings in the original array.',
+        content: FormattedPrompt,
       },
     ],
     model: pluginParams.gptModel,
@@ -315,6 +312,7 @@ async function translateStructuredTextValue(
     blockNodes,
     pluginParams,
     toLocale,
+    fromLocale,
     'rich_text',
     openai,
     '',
@@ -364,26 +362,34 @@ async function translateDefaultFieldValue(
   fieldValue: unknown,
   pluginParams: ctxParamsType,
   toLocale: string,
+  fromLocale: string,
   openai: OpenAI,
   fieldTypePrompt: string
 ) {
-  const prompt =
-    pluginParams.prompt +
-    ' translate the following string\n"' +
-    fieldValue +
-    '"\n to the language ' +
-    localeSelect(toLocale).name +
-    fieldTypePrompt;
+  let FormattedPrompt = pluginParams.prompt
+    .replace('{fieldValue}', fieldValue as string)
+    .replace('{fromLocale}', localeSelect(fromLocale).name)
+    .replace('{toLocale}', localeSelect(toLocale).name);
+
+  FormattedPrompt += '\n' + fieldTypePrompt;
 
   const completion = await openai.chat.completions.create({
     messages: [
       {
         role: 'system',
-        content: prompt,
+        content: FormattedPrompt,
       },
     ],
     model: pluginParams.gptModel,
   });
+
+  //special case for json fields
+  if (
+    fieldTypePrompt ===
+    'Return the response in the format of A valid JSON string. Only return the json string, nothing else'
+  ) {
+    return completion.choices[0].message.content;
+  }
 
   // Remove quotes from the response if any
   return completion.choices[0].message.content?.replace(/"/g, '');
@@ -406,6 +412,7 @@ export async function translateFieldValue(
   fieldValue: unknown,
   pluginParams: ctxParamsType,
   toLocale: string,
+  fromLocale: string,
   fieldType: string,
   openai: OpenAI,
   fieldTypePrompt: string,
@@ -416,7 +423,7 @@ export async function translateFieldValue(
   }
 ): Promise<unknown> {
   // If field doesn't need translation or is empty, return original value
-  if (fieldsThatDontNeedTranslation.includes(fieldType) || !fieldValue) {
+  if (!pluginParams.translationFields.includes(fieldType) || !fieldValue) {
     return fieldValue;
   }
 
@@ -427,6 +434,7 @@ export async function translateFieldValue(
         fieldValue,
         pluginParams,
         toLocale,
+        fromLocale,
         openai,
         fieldTypePrompt
       );
@@ -435,6 +443,7 @@ export async function translateFieldValue(
         fieldValue,
         pluginParams,
         toLocale,
+        fromLocale,
         openai,
         apiToken,
         options
@@ -444,6 +453,7 @@ export async function translateFieldValue(
         fieldValue,
         pluginParams,
         toLocale,
+        fromLocale,
         openai,
         apiToken
       );
@@ -452,6 +462,7 @@ export async function translateFieldValue(
         fieldValue,
         pluginParams,
         toLocale,
+        fromLocale,
         openai,
         fieldTypePrompt
       );
@@ -478,6 +489,7 @@ const TranslateField = async (
   ctx: ExecuteFieldDropdownActionCtx,
   pluginParams: ctxParamsType,
   toLocale: string,
+  fromLocale: string,
   fieldType: string
 ) => {
   // Extract field path and adjust to target locale
@@ -486,17 +498,6 @@ const TranslateField = async (
 
   // UI adjustments before translation
   ctx.disableField(ctx.fieldPath, true);
-  // setViewState('collapsed');
-  // controls.start({
-  //   rotate: [0, 360],
-  //   transition: {
-  //     rotate: {
-  //       duration: 1,
-  //       ease: 'linear',
-  //       repeat: Infinity,
-  //     },
-  //   },
-  // });
 
   // Determine the field type prompt
   let fieldTypePrompt = 'Return the response in the format of ';
@@ -516,6 +517,7 @@ const TranslateField = async (
     fieldValue,
     pluginParams,
     toLocale,
+    fromLocale,
     fieldType,
     newOpenai,
     fieldTypePrompt,
