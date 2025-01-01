@@ -15,6 +15,8 @@ import {
 import s from '../styles.module.css';
 import { useEffect, useState, useMemo } from 'react';
 import OpenAI from 'openai';
+import ReactTextareaAutosize from 'react-textarea-autosize';
+import { defaultPrompt } from '../../prompts/DefaultPrompt';
 
 /**
  * Props type for the ConfigScreen component.
@@ -36,10 +38,11 @@ export type ctxParamsType = {
   apiKey: string;
   translationFields: string[];
   translateWholeRecord: boolean;
+  prompt: string;
 };
 
 /**
- * Mapping of field types to their human-readable labels for translation purposes.
+ * Mapping of field types to their human-readable labels
  */
 export const translateFieldTypes = {
   single_line: 'Single line string',
@@ -87,6 +90,7 @@ const updatePluginParams = async (
   gptModel: string,
   translationFields: string[],
   translateWholeRecord: boolean,
+  prompt: string,
   setIsLoading: React.Dispatch<React.SetStateAction<boolean>>
 ) => {
   setIsLoading(true);
@@ -97,6 +101,7 @@ const updatePluginParams = async (
       gptModel,
       translationFields,
       translateWholeRecord,
+      prompt,
     });
     ctx.notice('Plugin options updated successfully!');
   } catch (error) {
@@ -125,6 +130,9 @@ export default function ConfigScreen({ ctx }: Props) {
 
   // State for OpenAI API Key, initialized with plugin parameter or empty string
   const [apiKey, setApiKey] = useState(pluginParams.apiKey ?? '');
+
+  // State for Translation prompt, initialized with plugin parameter or default prompt
+  const [prompt, setPrompt] = useState(pluginParams.prompt ?? defaultPrompt);
 
   // State for Translation Fields, initialized with plugin parameter or default keys
   const [translationFields, setTranslationFields] = useState<string[]>(
@@ -176,7 +184,8 @@ export default function ConfigScreen({ ctx }: Props) {
         (Array.isArray(pluginParams.translationFields)
           ? pluginParams.translationFields.sort().join(',')
           : Object.keys(translateFieldTypes).sort().join(',')) ||
-      translateWholeRecord !== (pluginParams.translateWholeRecord ?? true)
+      translateWholeRecord !== (pluginParams.translateWholeRecord ?? true) ||
+      prompt !== (pluginParams.prompt ?? defaultPrompt)
     );
   }, [
     apiKey,
@@ -187,6 +196,7 @@ export default function ConfigScreen({ ctx }: Props) {
     pluginParams.gptModel,
     pluginParams.translationFields,
     pluginParams.translateWholeRecord,
+    prompt,
   ]);
 
   return (
@@ -243,7 +253,7 @@ export default function ConfigScreen({ ctx }: Props) {
         <SelectField
           name="fieldsWithTranslationOption"
           id="fieldsWithTranslationOption"
-          label="Fields with the 'Translate' option"
+          label="Fields that can be translated"
           value={translationFields.map((field) => ({
             label:
               translateFieldTypes[field as keyof typeof translateFieldTypes],
@@ -264,6 +274,17 @@ export default function ConfigScreen({ ctx }: Props) {
             setTranslationFields(selectedFields);
           }}
         />
+
+        <div className={s.promptContainer}>
+          <span className={s.label}>Translation prompt*</span>
+          <ReactTextareaAutosize
+            required={true}
+            className={s.textarea}
+            placeholder="Enter your prompt here"
+            value={prompt}
+            onChange={(e) => setPrompt(e.target.value)}
+          ></ReactTextareaAutosize>
+        </div>
 
         {/* SwitchField to allow or disallow translation of the whole record */}
         <div className={s.switchField}>
@@ -293,6 +314,7 @@ export default function ConfigScreen({ ctx }: Props) {
                 gptModel,
                 translationFields,
                 translateWholeRecord,
+                prompt,
                 setIsLoading
               )
             }

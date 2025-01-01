@@ -74,7 +74,7 @@
 
 .textarea {
   width: 96%;
-  border: 1px solid #d0cece89;
+  border: 1px solid #d0cece5d;
   padding: 12px;
   resize: none;
   outline: none;
@@ -107,4 +107,11 @@
 
 .switchField {
   margin-top: 16px;
+}
+
+.promptContainer {
+  margin-top: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
 }

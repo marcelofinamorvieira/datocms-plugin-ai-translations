@@ -2,15 +2,14 @@ import {
   connect,
   DropdownAction,
   DropdownActionGroup,
+  ExecuteFieldDropdownActionCtx,
   FieldDropdownActionsCtx,
 } from 'datocms-plugin-sdk';
 import 'datocms-react-ui/styles.css';
-import ConfigScreen, {
-  ctxParamsType,
-  translateFieldTypes,
-} from './entrypoints/Config/ConfigScreen';
+import ConfigScreen, { ctxParamsType } from './entrypoints/Config/ConfigScreen';
 import { render } from './utils/render';
 import locale from 'locale-codes';
+import TranslateField from './utils/TranslateField';
 
 const localeSelect = locale.getByTag;
 
@@ -161,5 +160,81 @@ connect({
     }
 
     return actionsArray;
+  },
+
+  async executeFieldDropdownAction(
+    actionId: string,
+    ctx: ExecuteFieldDropdownActionCtx
+  ) {
+    const pluginParams = ctx.plugin.attributes.parameters as ctxParamsType;
+    const locales = ctx.formValues.internalLocales as string[];
+    const fieldType = ctx.field.attributes.appearance.editor;
+    const fieldValue = ctx.formValues[ctx.field.attributes.api_key];
+
+    if (actionId.includes('translateFrom')) {
+      // Handle translation from another locale
+      const locale = actionId.split('.')[1];
+      const fieldValueOnThatLocale = (fieldValue as Record<string, unknown>)[
+        locale
+      ];
+      if (!fieldValueOnThatLocale) {
+        ctx.alert(
+          'The field on the ' + localeSelect(locale)?.name + ' locale is empty'
+        );
+        return;
+      }
+      await TranslateField(
+        fieldValueOnThatLocale,
+        ctx,
+        pluginParams,
+        ctx.locale,
+        fieldType
+      );
+      ctx.notice('Translated field from ' + localeSelect(locale)?.name);
+      return;
+    } else if (actionId.includes('translateTo')) {
+      await ctx.updateFieldAppearance(ctx.field.id, [
+        {
+          operation: 'insertAddon',
+          index: 0,
+          fieldExtensionId: 'datoGptPrompt',
+          parameters: {},
+        },
+      ]);
+      const locale = actionId.split('.')[1];
+      if (locale === 'allLocales') {
+        for (let i = 0; i < locales.length; i++) {
+          if (locales[i] == ctx.locale) continue;
+          await TranslateField(
+            (fieldValue as Record<string, unknown>)[ctx.locale],
+            ctx,
+            pluginParams,
+            locales[i],
+            fieldType
+          );
+        }
+        ctx.notice('Translated field to all locales');
+        return;
+      }
+      await TranslateField(
+        (fieldValue as Record<string, unknown>)[ctx.locale],
+        ctx,
+        pluginParams,
+        locale,
+        fieldType
+      );
+      ctx.notice('Translated field to ' + localeSelect(locale)?.name);
+      // await ctx.updateFieldAppearance(ctx.field.id, [
+      //   {
+      //     operation: 'insertAddon',
+      //     index: 0,
+      //     fieldExtensionId: 'datoGptPrompt',
+      //     parameters: {},
+      //   },
+      // ]);
+      return;
+    } else if (actionId === 'not-configured') {
+      ctx.navigateTo('/configuration/plugins/' + ctx.plugin.id + '/edit');
+    }
   },
 });
