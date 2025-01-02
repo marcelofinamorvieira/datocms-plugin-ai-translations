@@ -26,17 +26,20 @@ import { defaultPrompt } from '../../prompts/DefaultPrompt';
 
 /**
  * The shape of the plugin parameters we store in DatoCMS.
+ * These fields are updated on the plugin configuration screen
+ * and used throughout the plugin for translation.
  */
 export type ctxParamsType = {
-  gptModel: string;
-  apiKey: string;
-  translationFields: string[];
-  translateWholeRecord: boolean;
-  prompt: string;
+  gptModel: string; // The GPT model used for translations
+  apiKey: string; // The API key used to authenticate with OpenAI
+  translationFields: string[]; // List of field editor types that can be translated
+  translateWholeRecord: boolean; // Whether to allow entire record translation
+  prompt: string; // The prompt template used by the translation logic
 };
 
 /**
  * A mapping from field editor types to their user-friendly labels.
+ * Used to present a friendly multi-select of possible translatable fields.
  */
 export const translateFieldTypes = {
   single_line: 'Single line string',
@@ -52,33 +55,42 @@ export const translateFieldTypes = {
 
 /**
  * Fetches the list of available models from OpenAI using the provided API key.
- * @param apiKey - your OpenAI API key.
- * @param setOptions - callback to set the retrieved models in state.
+ * It sets the list of model IDs or an error message in the local component state.
+ *
+ * @param apiKey - Your OpenAI API key
+ * @param setOptions - Callback to set the retrieved models in state
  */
 async function fetchAvailableModels(
   apiKey: string,
   setOptions: React.Dispatch<React.SetStateAction<string[]>>
 ) {
   try {
+    // Create an instance of the OpenAI API client
     const openai = new OpenAI({ apiKey, dangerouslyAllowBrowser: true });
+
+    // Fetch the list of all available models
     const list = await openai.models.list();
-    // We only store the model IDs
+
+    // Map each model object to its ID and store in the component state
     setOptions(list.data.map((option) => option.id));
   } catch (error) {
     console.error('Error fetching OpenAI models:', error);
+    // If an error occurs, notify the user that we failed to fetch model list
     setOptions(['Failed to fetch models']);
   }
 }
 
 /**
  * Persists the updated plugin parameters to DatoCMS.
- * @param ctx - the DatoCMS render context.
- * @param apiKey - new OpenAI API key.
- * @param gptModel - chosen GPT model.
- * @param translationFields - which field types can be translated.
- * @param translateWholeRecord - whether to enable entire record translation.
- * @param prompt - user-defined or default translation prompt.
- * @param setIsLoading - toggles the local loading state.
+ * If successful, displays a success message; otherwise, alerts the user of an error.
+ *
+ * @param ctx - The DatoCMS render context
+ * @param apiKey - The new OpenAI API key
+ * @param gptModel - The chosen GPT model
+ * @param translationFields - The field types that can be translated
+ * @param translateWholeRecord - Whether entire record translation is allowed
+ * @param prompt - User-defined or default translation prompt
+ * @param setIsLoading - Toggles the local loading state
  */
 const updatePluginParams = async (
   ctx: RenderConfigScreenCtx,
@@ -89,8 +101,10 @@ const updatePluginParams = async (
   prompt: string,
   setIsLoading: React.Dispatch<React.SetStateAction<boolean>>
 ) => {
+  // Enter a loading state while we update the plugin parameters
   setIsLoading(true);
   try {
+    // Update the plugin parameters in DatoCMS
     await ctx.updatePluginParameters({
       apiKey,
       gptModel,
@@ -98,11 +112,15 @@ const updatePluginParams = async (
       translateWholeRecord,
       prompt,
     });
+
+    // Notify the user of success
     ctx.notice('Plugin options updated successfully!');
   } catch (error) {
     console.error('Error updating plugin parameters:', error);
+    // Alert the user if something goes wrong
     ctx.alert('Failed to update plugin options. Please try again.');
   } finally {
+    // Exit the loading state
     setIsLoading(false);
   }
 };
@@ -110,10 +128,11 @@ const updatePluginParams = async (
 /**
  * Main config screen component. Users interact with these fields
  * to adjust plugin behavior and integration with OpenAI.
- * @param props - contains the RenderConfigScreenCtx from DatoCMS
+ *
+ * @param props - Contains the RenderConfigScreenCtx from DatoCMS
  */
 export default function ConfigScreen({ ctx }: { ctx: RenderConfigScreenCtx }) {
-  // Extract existing plugin params or fallback to defaults
+  // Retrieve existing plugin params or use defaults if not set
   const pluginParams = ctx.plugin.attributes.parameters as ctxParamsType;
 
   // Local state for the API key
@@ -137,10 +156,10 @@ export default function ConfigScreen({ ctx }: { ctx: RenderConfigScreenCtx }) {
       : true
   );
 
-  // Local state for the translation prompt
+  // Local state for the translation prompt (includes placeholders like {fieldValue})
   const [prompt, setPrompt] = useState(pluginParams.prompt ?? defaultPrompt);
 
-  // Manage loading for asynchronous operations
+  // A loading state to indicate asynchronous operations (like saving or model fetching)
   const [isLoading, setIsLoading] = useState(false);
 
   // Holds all possible GPT models fetched from the OpenAI API
@@ -149,7 +168,8 @@ export default function ConfigScreen({ ctx }: { ctx: RenderConfigScreenCtx }) {
   ]);
 
   /**
-   * When the user updates or removes the API key, refetch the model list.
+   * When the user updates or removes the API key, we refetch the model list.
+   * If there's no API key provided, we show a placeholder message.
    */
   useEffect(() => {
     if (apiKey) {
@@ -160,8 +180,8 @@ export default function ConfigScreen({ ctx }: { ctx: RenderConfigScreenCtx }) {
   }, [apiKey]);
 
   /**
-   * Check if the user has changed any of the config fields,
-   * so we can enable or disable the Save button accordingly.
+   * Checks if the user has changed any of the config fields,
+   * so we can enable or disable the "Save" button accordingly.
    */
   const isFormDirty = useMemo(() => {
     return (
@@ -187,9 +207,10 @@ export default function ConfigScreen({ ctx }: { ctx: RenderConfigScreenCtx }) {
   ]);
 
   return (
+    // Canvas is a Datocms React UI wrapper for consistent styling
     <Canvas ctx={ctx}>
       <div>
-        {/* API Key input */}
+        {/* Text field for entering the OpenAI API key */}
         <TextField
           required
           name="openAIAPIKey"
@@ -200,7 +221,7 @@ export default function ConfigScreen({ ctx }: { ctx: RenderConfigScreenCtx }) {
           placeholder="sk-..."
         />
 
-        {/* GPT Model selector */}
+        {/* GPT Model dropdown selector */}
         <div className={s.modelSelect}>
           <span>GPT Model:</span>
           <Dropdown
@@ -229,16 +250,19 @@ export default function ConfigScreen({ ctx }: { ctx: RenderConfigScreenCtx }) {
                 ))}
             </DropdownMenu>
           </Dropdown>
-          <span className={s.tooltipConfig}>Using gpt-4o-mini is recommended</span>
+          <span className={s.tooltipConfig}>
+            Using gpt-4o-mini is recommended
+          </span>
         </div>
 
-        {/* Field types multi-select */}
+        {/* A multi-select component that lets users choose which field types can be translated */}
         <SelectField
           name="fieldsWithTranslationOption"
           id="fieldsWithTranslationOption"
           label="Fields that can be translated"
           value={translationFields.map((field) => ({
-            label: translateFieldTypes[field as keyof typeof translateFieldTypes],
+            label:
+              translateFieldTypes[field as keyof typeof translateFieldTypes],
             value: field,
           }))}
           selectInputProps={{
@@ -256,9 +280,25 @@ export default function ConfigScreen({ ctx }: { ctx: RenderConfigScreenCtx }) {
           }}
         />
 
-        {/* Prompt input */}
+        {/* Prompt input section, including a custom hover-based tooltip for placeholders usage */}
         <div className={s.promptContainer}>
-          <span className={s.label}>Translation prompt*</span>
+          <label
+            className={s.label}
+            style={{ display: 'flex', alignItems: 'center' }}
+          >
+            Translation prompt*
+            {/* Tooltip container to show the info text on hover */}
+            <div className={s.tooltipContainer}>
+              &#9432;
+              {/* Actual tooltip text that appears on hover */}
+              <div className={s.tooltipText}>
+                Use &#123;fieldValue&#125;, &#123;fromLocale&#125;, and
+                &#123;toLocale&#125; in your prompt to reference the content and
+                source/target languages. Changing the prompt can break the
+                plugin, so proceed with caution.
+              </div>
+            </div>
+          </label>
           <ReactTextareaAutosize
             required
             className={s.textarea}
@@ -268,7 +308,7 @@ export default function ConfigScreen({ ctx }: { ctx: RenderConfigScreenCtx }) {
           />
         </div>
 
-        {/* Switch to enable translating entire record */}
+        {/* A switch field to allow translation of the entire record from the sidebar */}
         <div className={s.switchField}>
           <SwitchField
             name="translateWholeRecord"
@@ -279,7 +319,7 @@ export default function ConfigScreen({ ctx }: { ctx: RenderConfigScreenCtx }) {
           />
         </div>
 
-        {/* Save button (enabled only if form is dirty) */}
+        {/* A button to save the configuration updates. It is disabled if nothing changed or if saving is in progress. */}
         <div className={s.buttons}>
           <Button
             disabled={!isFormDirty || isLoading}

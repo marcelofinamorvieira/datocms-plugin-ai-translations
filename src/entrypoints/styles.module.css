@@ -1,3 +1,10 @@
+/* styles.module.css
+   -----------------
+   This file holds various CSS classes for styling components
+   throughout the plugin, including custom classes for the
+   hover-based tooltip on the info icon in ConfigScreen.tsx. */
+
+/* Existing styles for layout and visuals */
 .modelSelect {
   display: flex;
   align-items: center;
@@ -114,4 +121,41 @@
   display: flex;
   flex-direction: column;
   gap: 4px;
+}
+
+/* Tooltip classes for the info icon hover */
+.tooltipContainer {
+  position: relative;
+  display: inline-block;
+  cursor: help;
+  margin-left: 8px;
+}
+
+/* Hidden by default; becomes visible on .tooltipContainer:hover */
+.tooltipText {
+  visibility: hidden;
+  width: 220px;
+  background-color: #555;
+  color: #fff;
+  text-align: left;
+  border-radius: 6px;
+  padding: 8px;
+  position: absolute;
+  z-index: 1;
+  top: -5px;
+  left: 120%;
+  opacity: 0;
+  transition: opacity 0.3s;
+  font-size: 13px;
+  line-height: 1.3;
+}
+
+.tooltipContainer:hover .tooltipText {
+  visibility: visible;
+  opacity: 1;
+}
+
+/* Inspector margin fix */
+.inspector {
+  margin-top: var(--spacing-l);
 }
