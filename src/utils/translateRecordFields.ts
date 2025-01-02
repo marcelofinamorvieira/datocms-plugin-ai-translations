@@ -1,8 +1,8 @@
 import { RenderItemFormSidebarPanelCtx } from 'datocms-plugin-sdk';
 import OpenAI from 'openai';
 import { ctxParamsType } from '../entrypoints/Config/ConfigScreen';
-import { translateFieldValue } from './TranslateField';
 import { fieldPrompt } from '../prompts/FieldPrompts';
+import { translateFieldValue } from './translation/TranslateField';
 
 /**
  * translateRecordFields.ts
@@ -120,8 +120,7 @@ export async function translateRecordFields(
         fieldType,
         openai,
         fieldTypePrompt,
-        ctx.currentUserAccessToken!,
-        { onStart: options.onStart, onComplete: options.onComplete }
+        ctx.currentUserAccessToken!
       );
 
       // Update form values with the translated field
