@@ -53,6 +53,7 @@ export const translateFieldTypes = {
   json: 'JSON',
   seo: 'SEO',
   structured_text: 'Structured Text',
+  rich_text: 'Modular Content',
 };
 
 /**

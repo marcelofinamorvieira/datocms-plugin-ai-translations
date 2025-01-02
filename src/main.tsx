@@ -4,12 +4,17 @@ import {
   DropdownActionGroup,
   ExecuteFieldDropdownActionCtx,
   FieldDropdownActionsCtx,
+  ItemFormSidebarPanelsCtx,
+  ItemType,
+  RenderItemFormSidebarPanelCtx,
 } from 'datocms-plugin-sdk';
 import 'datocms-react-ui/styles.css';
 import ConfigScreen, { ctxParamsType } from './entrypoints/Config/ConfigScreen';
 import { render } from './utils/render';
 import locale from 'locale-codes';
 import TranslateField from './utils/TranslateField';
+import DatoGPTTranslateSidebar from './entrypoints/Sidebar/DatoGPTTranslateSidebar';
+import { Canvas } from 'datocms-react-ui';
 
 const localeSelect = locale.getByTag;
 
@@ -26,6 +31,43 @@ function getValueAtPath(obj: any, path: string): any {
 connect({
   renderConfigScreen(ctx) {
     return render(<ConfigScreen ctx={ctx} />);
+  },
+  itemFormSidebarPanels(_model: ItemType, ctx: ItemFormSidebarPanelsCtx) {
+    const pluginParams = ctx.plugin.attributes.parameters as ctxParamsType;
+
+    if (!pluginParams.translateWholeRecord) {
+      return [];
+    }
+
+    return [
+      {
+        id: 'datoGptTranslateSidebar',
+        label: 'DatoGPT Translate',
+        placement: ['after', 'info'],
+      },
+    ];
+  },
+  renderItemFormSidebarPanel(
+    sidebarPanelId,
+    ctx: RenderItemFormSidebarPanelCtx
+  ) {
+    if (sidebarPanelId === 'datoGptTranslateSidebar') {
+      if (
+        Array.isArray(ctx.formValues.internalLocales) &&
+        ctx.formValues.internalLocales.length > 1
+      ) {
+        return render(<DatoGPTTranslateSidebar ctx={ctx} />);
+      }
+      return render(
+        <Canvas ctx={ctx}>
+          <p>
+            For the translate feature to work, you need to have more than one
+            locale in this record.
+          </p>
+        </Canvas>
+      );
+    }
+    return null;
   },
   fieldDropdownActions(_field, ctx: FieldDropdownActionsCtx) {
     const pluginParams = ctx.plugin.attributes.parameters as ctxParamsType;

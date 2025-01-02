@@ -18,4 +18,5 @@ export const fieldPrompt = {
   json: 'A valid JSON string. Only return the json string, nothing else',
   seo: 'A valid JSON string of an object with the following format: {title: "A string with an SEO title with at most 60 charactes", description: "A string with an SEO description with at most 160 characters", if it is asking for a generation, generate also this key value: imagePrompt: "A string describing a good DALLE 3 prompt to generate an SEO image for this post" if it is asking for an improvement, generate this key value: image: "repeat the original id of the image" }',
   textarea: 'a string with no limit on the number of characters',
+  rich_text: '',
 };
