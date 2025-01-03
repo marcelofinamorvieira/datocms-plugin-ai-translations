@@ -86,8 +86,6 @@ export async function translateStructuredTextValue(
     inlineCompletion.choices[0].message.content || '[]'
   );
 
-  console.log('returnedTextValues', returnedTextValues);
-
   // Translate block nodes individually using translateFieldValue
   const translatedBlockNodes = await translateFieldValue(
     blockNodes,
