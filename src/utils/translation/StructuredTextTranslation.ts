@@ -69,8 +69,7 @@ export async function translateStructuredTextValue(
     .replace('{fromLocale}', fromLocaleName)
     .replace('{toLocale}', toLocaleName);
 
-  prompt += `\nReturn the translated strings array in a valid JSON format. The number of returned strings should match the original.`;
-
+  prompt += `\nReturn the translated strings array in a valid JSON format. The number of returned strings should match the original. Do not trim any empty strings or spaces. The number of returned strings should match the original. Do not trim any empty strings or spaces.`;
   // Inline text translation via OpenAI
   const inlineCompletion = await openai.chat.completions.create({
     messages: [
@@ -86,6 +85,8 @@ export async function translateStructuredTextValue(
   const returnedTextValues = JSON.parse(
     inlineCompletion.choices[0].message.content || '[]'
   );
+
+  console.log('returnedTextValues', returnedTextValues);
 
   // Translate block nodes individually using translateFieldValue
   const translatedBlockNodes = await translateFieldValue(

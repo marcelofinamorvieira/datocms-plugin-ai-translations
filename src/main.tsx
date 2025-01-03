@@ -278,6 +278,7 @@ connect({
         fieldType
       );
       ctx.notice(`Translated field from ${localeSelect(locale)?.name}`);
+      console.log('fieldValue', fieldValue);
       return;
     }
 

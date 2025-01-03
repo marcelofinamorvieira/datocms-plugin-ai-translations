@@ -33,7 +33,14 @@ export function removeIds(obj: unknown): any {
   } else if (typeof obj === 'object' && obj !== null) {
     const newObj: any = {};
     for (const [key, value] of Object.entries(obj)) {
-      if (key !== 'id') {
+      // Keep id if it's in a meta array item with a value property
+      if (
+        key === 'id' &&
+        obj.hasOwnProperty('value') &&
+        Object.keys(obj).length === 2
+      ) {
+        newObj[key] = value;
+      } else if (key !== 'id') {
         newObj[key] = removeIds(value);
       }
     }
