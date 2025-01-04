@@ -23,7 +23,7 @@ import locale from 'locale-codes';
 // Import the newly refactored translation function
 import TranslateField from './utils/translation/TranslateField';
 import DatoGPTTranslateSidebar from './entrypoints/Sidebar/DatoGPTTranslateSidebar';
-import { Canvas } from 'datocms-react-ui';
+import { Button, Canvas } from 'datocms-react-ui';
 
 const localeSelect = locale.getByTag;
 
@@ -91,6 +91,26 @@ connect({
     sidebarPanelId,
     ctx: RenderItemFormSidebarPanelCtx
   ) {
+    const pluginParams = ctx.plugin.attributes.parameters as ctxParamsType;
+    if (
+      !pluginParams.apiKey ||
+      !pluginParams ||
+      !pluginParams.gptModel ||
+      pluginParams.gptModel === 'None'
+    ) {
+      return render(
+        <Canvas ctx={ctx}>
+          <Button
+            fullWidth
+            onClick={() =>
+              ctx.navigateTo(`/configuration/plugins/${ctx.plugin.id}/edit`)
+            }
+          >
+            Please insert a valid API Key <br /> and select a GPT Model
+          </Button>
+        </Canvas>
+      );
+    }
     if (sidebarPanelId === 'datoGptTranslateSidebar') {
       if (
         Array.isArray(ctx.formValues.internalLocales) &&
@@ -137,8 +157,7 @@ connect({
       return [
         {
           id: 'not-configured',
-          label:
-            'Please insert a valid API Key and select a GPT & DALL-E Model',
+          label: 'Please insert a valid API Key and select a GPT Model',
           icon: openaAIIconObject,
         } as DropdownAction,
       ];

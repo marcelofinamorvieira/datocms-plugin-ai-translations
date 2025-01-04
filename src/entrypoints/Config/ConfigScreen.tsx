@@ -65,7 +65,8 @@ export const translateFieldTypes = {
  */
 async function fetchAvailableModels(
   apiKey: string,
-  setOptions: React.Dispatch<React.SetStateAction<string[]>>
+  setOptions: React.Dispatch<React.SetStateAction<string[]>>,
+  setGptModel: React.Dispatch<React.SetStateAction<string>>
 ) {
   try {
     // Create an instance of the OpenAI API client
@@ -79,7 +80,8 @@ async function fetchAvailableModels(
   } catch (error) {
     console.error('Error fetching OpenAI models:', error);
     // If an error occurs, notify the user that we failed to fetch model list
-    setOptions(['Failed to fetch models']);
+    setOptions(['Invalid API Key']);
+    setGptModel('None');
   }
 }
 
@@ -147,8 +149,7 @@ export default function ConfigScreen({ ctx }: { ctx: RenderConfigScreenCtx }) {
 
   // Local state for which field types can be translated
   const [translationFields, setTranslationFields] = useState<string[]>(
-    Array.isArray(pluginParams.translationFields) &&
-      pluginParams.translationFields.length > 0
+    Array.isArray(pluginParams.translationFields)
       ? pluginParams.translationFields
       : Object.keys(translateFieldTypes)
   );
@@ -187,9 +188,12 @@ export default function ConfigScreen({ ctx }: { ctx: RenderConfigScreenCtx }) {
    */
   useEffect(() => {
     if (apiKey) {
-      fetchAvailableModels(apiKey, setListOfModels).catch(console.error);
+      fetchAvailableModels(apiKey, setListOfModels, setGptModel).catch(
+        console.error
+      );
     } else {
       setListOfModels(['Insert a valid OpenAI API Key']);
+      setGptModel('None');
     }
   }, [apiKey]);
 
@@ -419,6 +423,32 @@ export default function ConfigScreen({ ctx }: { ctx: RenderConfigScreenCtx }) {
 
         {/* A button to save the configuration updates. It is disabled if nothing changed or if saving is in progress. */}
         <div className={s.buttons}>
+          <Button
+            fullWidth
+            disabled={
+              gptModel === 'None' ||
+              (translationFields.sort().join(',') ===
+                Object.keys(translateFieldTypes).sort().join(',') &&
+                translateWholeRecord === true &&
+                prompt === defaultPrompt &&
+                modelsToBeExcluded.length === 0 &&
+                rolesToBeExcluded.length === 0)
+            }
+            buttonType="muted"
+            onClick={() => {
+              setGptModel('gpt-4o-mini');
+              setTranslationFields(Object.keys(translateFieldTypes));
+              setTranslateWholeRecord(true);
+              setPrompt(defaultPrompt);
+              setModelsToBeExcluded([]);
+              setRolesToBeExcluded([]);
+              ctx.notice(
+                '<h1>Plugin options restored to defaults</h1>\n<p>Save to apply changes</p>'
+              );
+            }}
+          >
+            Restore to defaults
+          </Button>
           <Button
             disabled={!isFormDirty || isLoading}
             fullWidth
