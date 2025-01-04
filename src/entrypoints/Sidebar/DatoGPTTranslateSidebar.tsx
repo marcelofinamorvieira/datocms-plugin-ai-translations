@@ -1,10 +1,12 @@
 import { RenderItemFormSidebarPanelCtx } from 'datocms-plugin-sdk';
 import { Button, Canvas, SelectField } from 'datocms-react-ui';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { ctxParamsType } from '../Config/ConfigScreen';
 import { motion, AnimatePresence } from 'framer-motion';
 import { translateRecordFields } from '../../utils/translateRecordFields';
 import { ChatBubble } from './Components/ChatbubbleTranslate';
+import { MdCelebration } from "react-icons/md";
+
 
 /**
  * DatoGPTTranslateSidebar.tsx
@@ -68,6 +70,36 @@ export default function DatoGPTTranslateSidebar({ ctx }: PropTypes) {
       fieldPath: string;
     }[]
   >([]);
+
+  // New state variables for timer functionality
+  const [showTimer, setShowTimer] = useState<boolean>(false);
+  const [progress, setProgress] = useState<number>(100);
+  const TIMER_DURATION = 7500; // 7.5 seconds in milliseconds
+
+  // Timer effect
+  useEffect(() => {
+    let timer: NodeJS.Timeout;
+    if (showTimer) {
+      const startTime = Date.now();
+      const updateProgress = () => {
+        const elapsed = Date.now() - startTime;
+        const remaining = Math.max(0, TIMER_DURATION - elapsed);
+        const newProgress = (remaining / TIMER_DURATION) * 100;
+
+        if (newProgress > 0) {
+          setProgress(newProgress);
+          timer = setTimeout(updateProgress, 16); // ~60fps
+        } else {
+          setShowTimer(false);
+          setIsLoading(false);
+        }
+      };
+      timer = setTimeout(updateProgress, 16);
+    }
+    return () => {
+      if (timer) clearTimeout(timer);
+    };
+  }, [showTimer]);
 
   // If no valid API key or model is configured, prompt user to fix configuration
   if (!pluginParams.apiKey || !pluginParams.gptModel) {
@@ -136,13 +168,13 @@ export default function DatoGPTTranslateSidebar({ ctx }: PropTypes) {
 
       // After success, show success message
       ctx.notice('All fields translated successfully');
+      setShowTimer(true);
+      setProgress(100);
     } catch (error: any) {
       // Show error alert if something goes wrong
       ctx.alert(
         error.message || 'An unknown error occurred during translation'
       );
-    } finally {
-      // Return to idle state regardless of outcome
       setIsLoading(false);
     }
   }
@@ -267,6 +299,101 @@ export default function DatoGPTTranslateSidebar({ ctx }: PropTypes) {
                   />
                 </div>
               ))}
+              {showTimer && (
+                <div>
+                  <motion.div
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '12px',
+                      backgroundColor: ctx.theme.semiTransparentAccentColor,
+                      color: ctx.theme.accentColor,
+                      padding: '16px 24px',
+                      borderRadius: '12px',
+                      marginBottom: '8px',
+                      fontFamily:
+                        '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif',
+                      fontSize: '16px',
+                      lineHeight: '1.4',
+                      letterSpacing: '0.01em',
+                      boxShadow: '0 2px 4px rgba(0, 0, 0, 0.1)',
+                      fontWeight: 600,
+                      border: `1px solid ${ctx.theme.semiTransparentAccentColor}`,
+                      textAlign: 'center',
+                    }}
+                  >
+                    <motion.div
+                      initial={{ scale: 0 }}
+                      animate={{ scale: 1 }}
+                      transition={{ delay: 0.2 }}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        textAlign: 'center',
+                        color: ctx.theme.accentColor,
+                      }}
+                    >
+                      <MdCelebration size={20} />
+                    </motion.div>
+                    All fields translated successfully
+                    <motion.div
+                      initial={{ scale: 0 }}
+                      animate={{ scale: 1 }}
+                      transition={{ delay: 0.2 }}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        color: ctx.theme.accentColor,
+                      }}
+                    >
+                      <MdCelebration size={20} />
+                    </motion.div>
+                  </motion.div>
+                  <div
+                    style={{
+                      width: '100%',
+                      height: '6px',
+                      backgroundColor: '#e6e6e6',
+                      borderRadius: '8px',
+                      overflow: 'hidden',
+                    }}
+                  >
+                    <motion.div
+                      style={{
+                        width: '100%',
+                        height: '100%',
+                        backgroundColor: ctx.theme.accentColor,
+                        transformOrigin: 'left',
+                      }}
+                      initial={{ scaleX: 1 }}
+                      animate={{ scaleX: progress / 100 }}
+                      transition={{ duration: 0.1 }}
+                    />
+                  </div>
+                  <div
+                    style={{
+                      display: 'flex',
+                      justifyContent: 'center',
+                      marginTop: '8px',
+                    }}
+                  >
+                    <Button
+                      buttonSize="xs"
+                      fullWidth
+                      buttonType="primary"
+                      onClick={() => {
+                        setShowTimer(false);
+                        setIsLoading(false);
+                      }}
+                    >
+                      Done
+                    </Button>
+                  </div>
+                </div>
+              )}
             </div>
           </motion.div>
         )}

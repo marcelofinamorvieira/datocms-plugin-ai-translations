@@ -1,6 +1,7 @@
 import { useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { AiOutlineOpenAI } from 'react-icons/ai';
+import { BsCheckCircleFill } from 'react-icons/bs';
 import { Theme } from 'datocms-plugin-sdk';
 
 /**
@@ -144,6 +145,9 @@ export function ChatBubble({ bubble, theme }: Props) {
             )}
           </span>
         </div>
+        {bubble.status === 'done' && (
+          <BsCheckCircleFill size={16} style={{ color: theme.accentColor || 'rgb(114, 0, 196)' }} />
+        )}
       </motion.div>
     </AnimatePresence>
   );
