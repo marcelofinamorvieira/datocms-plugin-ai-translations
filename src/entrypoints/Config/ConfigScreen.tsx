@@ -360,7 +360,7 @@ export default function ConfigScreen({ ctx }: { ctx: RenderConfigScreenCtx }) {
           <SelectField
             name="rolesToBeExcludedFromTranslation"
             id="rolesToBeExcludedFromTranslation"
-            label="Roles to be excluded from this plugin"
+            label="Roles to be excluded from using this plugin"
             value={rolesToBeExcluded.map((roleId) => {
               const role = roles.find((r) => r.id === roleId);
               return {
