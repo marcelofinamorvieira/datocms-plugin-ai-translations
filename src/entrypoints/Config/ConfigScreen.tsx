@@ -35,6 +35,7 @@ export type ctxParamsType = {
   translationFields: string[]; // List of field editor types that can be translated
   translateWholeRecord: boolean; // Whether to allow entire record translation
   prompt: string; // The prompt template used by the translation logic
+  modelsToBeExcludedFromThisPlugin: string[]; // List of model API keys to exclude from translation
 };
 
 /**
@@ -90,6 +91,7 @@ async function fetchAvailableModels(
  * @param translationFields - The field types that can be translated
  * @param translateWholeRecord - Whether entire record translation is allowed
  * @param prompt - User-defined or default translation prompt
+ * @param modelsToBeExcludedFromThisPlugin - List of model API keys to exclude from translation
  * @param setIsLoading - Toggles the local loading state
  */
 const updatePluginParams = async (
@@ -99,28 +101,25 @@ const updatePluginParams = async (
   translationFields: string[],
   translateWholeRecord: boolean,
   prompt: string,
+  modelsToBeExcludedFromThisPlugin: string[],
   setIsLoading: React.Dispatch<React.SetStateAction<boolean>>
 ) => {
-  // Enter a loading state while we update the plugin parameters
   setIsLoading(true);
   try {
-    // Update the plugin parameters in DatoCMS
     await ctx.updatePluginParameters({
       apiKey,
       gptModel,
       translationFields,
       translateWholeRecord,
       prompt,
+      modelsToBeExcludedFromThisPlugin,
     });
 
-    // Notify the user of success
     ctx.notice('Plugin options updated successfully!');
   } catch (error) {
     console.error('Error updating plugin parameters:', error);
-    // Alert the user if something goes wrong
     ctx.alert('Failed to update plugin options. Please try again.');
   } finally {
-    // Exit the loading state
     setIsLoading(false);
   }
 };
@@ -147,6 +146,11 @@ export default function ConfigScreen({ ctx }: { ctx: RenderConfigScreenCtx }) {
       pluginParams.translationFields.length > 0
       ? pluginParams.translationFields
       : Object.keys(translateFieldTypes)
+  );
+
+  // Local state for models to be excluded from translation
+  const [modelsToBeExcluded, setModelsToBeExcluded] = useState<string[]>(
+    pluginParams.modelsToBeExcludedFromThisPlugin ?? []
   );
 
   // Local state to allow entire record translation
@@ -191,7 +195,9 @@ export default function ConfigScreen({ ctx }: { ctx: RenderConfigScreenCtx }) {
         (pluginParams.translationFields?.sort().join(',') ??
           Object.keys(translateFieldTypes).sort().join(',')) ||
       translateWholeRecord !== (pluginParams.translateWholeRecord ?? true) ||
-      prompt !== (pluginParams.prompt ?? defaultPrompt)
+      prompt !== (pluginParams.prompt ?? defaultPrompt) ||
+      modelsToBeExcluded.sort().join(',') !==
+        (pluginParams.modelsToBeExcludedFromThisPlugin?.sort().join(',') ?? '')
     );
   }, [
     apiKey,
@@ -199,12 +205,26 @@ export default function ConfigScreen({ ctx }: { ctx: RenderConfigScreenCtx }) {
     translationFields,
     translateWholeRecord,
     prompt,
+    modelsToBeExcluded,
     pluginParams.apiKey,
     pluginParams.gptModel,
     pluginParams.translationFields,
     pluginParams.translateWholeRecord,
     pluginParams.prompt,
+    pluginParams.modelsToBeExcludedFromThisPlugin,
   ]);
+
+  const availableModels = useMemo(() => {
+    return Object.entries(ctx.itemTypes)
+      .map(([_key, value]) => {
+        return {
+          apiKey: value?.attributes.api_key,
+          name: value?.attributes.name,
+          isBlock: value?.attributes.modular_block,
+        };
+      })
+      .filter((item) => !item.isBlock);
+  }, [ctx.itemTypes]);
 
   return (
     // Canvas is a Datocms React UI wrapper for consistent styling
@@ -280,6 +300,32 @@ export default function ConfigScreen({ ctx }: { ctx: RenderConfigScreenCtx }) {
           }}
         />
 
+        <div style={{ marginTop: '16px' }}>
+          <SelectField
+            name="modelsToBeExcludedFromTranslation"
+            id="modelsToBeExcludedFromTranslation"
+            label="Models to be excluded from this plugin"
+            value={modelsToBeExcluded.map((modelKey) => {
+              const model = availableModels.find((m) => m.apiKey === modelKey);
+              return {
+                label: model?.name ?? modelKey,
+                value: modelKey,
+              };
+            })}
+            selectInputProps={{
+              isMulti: true,
+              options: availableModels.map((model) => ({
+                label: model.name ?? '',
+                value: model.apiKey ?? '',
+              })),
+            }}
+            onChange={(newValue) => {
+              const selectedModels = newValue.map((v) => v.value);
+              setModelsToBeExcluded(selectedModels);
+            }}
+          />
+        </div>
+
         {/* Prompt input section, including a custom hover-based tooltip for placeholders usage */}
         <div className={s.promptContainer}>
           <label
@@ -333,6 +379,7 @@ export default function ConfigScreen({ ctx }: { ctx: RenderConfigScreenCtx }) {
                 translationFields,
                 translateWholeRecord,
                 prompt,
+                modelsToBeExcluded,
                 setIsLoading
               )
             }

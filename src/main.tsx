@@ -58,10 +58,15 @@ connect({
   /**
    * Registers a sidebar panel if 'translateWholeRecord' is enabled.
    */
-  itemFormSidebarPanels(_model: ItemType, ctx: ItemFormSidebarPanelsCtx) {
+  itemFormSidebarPanels(model: ItemType, ctx: ItemFormSidebarPanelsCtx) {
     const pluginParams = ctx.plugin.attributes.parameters as ctxParamsType;
 
-    if (!pluginParams.translateWholeRecord) {
+    if (
+      !pluginParams.translateWholeRecord ||
+      pluginParams.modelsToBeExcludedFromThisPlugin.includes(
+        model.attributes.api_key
+      )
+    ) {
       return [];
     }
 
@@ -132,6 +137,14 @@ connect({
           icon: openaAIIconObject,
         } as DropdownAction,
       ];
+    }
+
+    if (
+      pluginParams.modelsToBeExcludedFromThisPlugin.includes(
+        ctx.itemType.attributes.api_key
+      )
+    ) {
+      return [];
     }
 
     // Extract field type from field's appearance
