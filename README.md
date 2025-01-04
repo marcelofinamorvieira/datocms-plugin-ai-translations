@@ -9,7 +9,7 @@ On the plugin’s Settings screen:
 1. **OpenAI API Key**: Paste a valid OpenAI API key. The plugin uses this key for translation requests.
 2. **GPT Model**: Select one of the available GPT-based models. Make sure your chosen model supports your needs.
 3. **Translatable Field Types**: Pick which field editor types (single_line, markdown, structured_text, etc.) can be translated.
-4. **Translate Whole Record**: Decide if you want the sidebar feature that translates every localized field in the record.
+4. **Translate Whole Record**: Decide if you want the sidebar feature that allows users to translate every localized field in the record at once.
 5. **Prompt Template**: Customize how translations are requested. The plugin uses placeholders like `{fieldValue}`, `{fromLocale}`, `{toLocale}`.
 
 Save your changes. The plugin is now ready.
