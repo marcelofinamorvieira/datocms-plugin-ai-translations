@@ -60,12 +60,17 @@ connect({
    */
   itemFormSidebarPanels(model: ItemType, ctx: ItemFormSidebarPanelsCtx) {
     const pluginParams = ctx.plugin.attributes.parameters as ctxParamsType;
+    const isRoleExcluded =
+      pluginParams.rolesToBeExcludedFromThisPlugin.includes(ctx.currentRole.id);
+    const isModelExcluded =
+      pluginParams.modelsToBeExcludedFromThisPlugin.includes(
+        model.attributes.api_key
+      );
 
     if (
       !pluginParams.translateWholeRecord ||
-      pluginParams.modelsToBeExcludedFromThisPlugin.includes(
-        model.attributes.api_key
-      )
+      isModelExcluded ||
+      isRoleExcluded
     ) {
       return [];
     }
@@ -139,11 +144,15 @@ connect({
       ];
     }
 
-    if (
+    const isModelExcluded =
       pluginParams.modelsToBeExcludedFromThisPlugin.includes(
         ctx.itemType.attributes.api_key
-      )
-    ) {
+      );
+
+    const isRoleExcluded =
+      pluginParams.rolesToBeExcludedFromThisPlugin.includes(ctx.currentRole.id);
+
+    if (isModelExcluded || isRoleExcluded) {
       return [];
     }
 

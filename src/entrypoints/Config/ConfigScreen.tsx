@@ -23,6 +23,7 @@ import { useEffect, useState, useMemo } from 'react';
 import OpenAI from 'openai';
 import ReactTextareaAutosize from 'react-textarea-autosize';
 import { defaultPrompt } from '../../prompts/DefaultPrompt';
+import { buildClient } from '@datocms/cma-client-browser';
 
 /**
  * The shape of the plugin parameters we store in DatoCMS.
@@ -36,6 +37,7 @@ export type ctxParamsType = {
   translateWholeRecord: boolean; // Whether to allow entire record translation
   prompt: string; // The prompt template used by the translation logic
   modelsToBeExcludedFromThisPlugin: string[]; // List of model API keys to exclude from translation
+  rolesToBeExcludedFromThisPlugin: string[]; // List of role IDs to exclude from translation
 };
 
 /**
@@ -92,6 +94,7 @@ async function fetchAvailableModels(
  * @param translateWholeRecord - Whether entire record translation is allowed
  * @param prompt - User-defined or default translation prompt
  * @param modelsToBeExcludedFromThisPlugin - List of model API keys to exclude from translation
+ * @param rolesToBeExcludedFromThisPlugin - List of role IDs to exclude from translation
  * @param setIsLoading - Toggles the local loading state
  */
 const updatePluginParams = async (
@@ -102,6 +105,7 @@ const updatePluginParams = async (
   translateWholeRecord: boolean,
   prompt: string,
   modelsToBeExcludedFromThisPlugin: string[],
+  rolesToBeExcludedFromThisPlugin: string[],
   setIsLoading: React.Dispatch<React.SetStateAction<boolean>>
 ) => {
   setIsLoading(true);
@@ -113,6 +117,7 @@ const updatePluginParams = async (
       translateWholeRecord,
       prompt,
       modelsToBeExcludedFromThisPlugin,
+      rolesToBeExcludedFromThisPlugin,
     });
 
     ctx.notice('Plugin options updated successfully!');
@@ -151,6 +156,11 @@ export default function ConfigScreen({ ctx }: { ctx: RenderConfigScreenCtx }) {
   // Local state for models to be excluded from translation
   const [modelsToBeExcluded, setModelsToBeExcluded] = useState<string[]>(
     pluginParams.modelsToBeExcludedFromThisPlugin ?? []
+  );
+
+  // Local state for roles to be excluded from translation
+  const [rolesToBeExcluded, setRolesToBeExcluded] = useState<string[]>(
+    pluginParams.rolesToBeExcludedFromThisPlugin ?? []
   );
 
   // Local state to allow entire record translation
@@ -197,7 +207,10 @@ export default function ConfigScreen({ ctx }: { ctx: RenderConfigScreenCtx }) {
       translateWholeRecord !== (pluginParams.translateWholeRecord ?? true) ||
       prompt !== (pluginParams.prompt ?? defaultPrompt) ||
       modelsToBeExcluded.sort().join(',') !==
-        (pluginParams.modelsToBeExcludedFromThisPlugin?.sort().join(',') ?? '')
+        (pluginParams.modelsToBeExcludedFromThisPlugin?.sort().join(',') ??
+          '') ||
+      rolesToBeExcluded.sort().join(',') !==
+        (pluginParams.rolesToBeExcludedFromThisPlugin?.sort().join(',') ?? '')
     );
   }, [
     apiKey,
@@ -206,12 +219,14 @@ export default function ConfigScreen({ ctx }: { ctx: RenderConfigScreenCtx }) {
     translateWholeRecord,
     prompt,
     modelsToBeExcluded,
+    rolesToBeExcluded,
     pluginParams.apiKey,
     pluginParams.gptModel,
     pluginParams.translationFields,
     pluginParams.translateWholeRecord,
     pluginParams.prompt,
     pluginParams.modelsToBeExcludedFromThisPlugin,
+    pluginParams.rolesToBeExcludedFromThisPlugin,
   ]);
 
   const availableModels = useMemo(() => {
@@ -225,6 +240,15 @@ export default function ConfigScreen({ ctx }: { ctx: RenderConfigScreenCtx }) {
       })
       .filter((item) => !item.isBlock);
   }, [ctx.itemTypes]);
+
+  const [roles, setRoles] = useState<{ id: string; name: string }[]>([]);
+
+  useEffect(() => {
+    const client = buildClient({ apiToken: ctx.currentUserAccessToken! });
+    client.roles.list().then((roles) => {
+      setRoles(roles.map((role) => ({ id: role.id, name: role.name })));
+    });
+  }, []);
 
   return (
     // Canvas is a Datocms React UI wrapper for consistent styling
@@ -328,6 +352,32 @@ export default function ConfigScreen({ ctx }: { ctx: RenderConfigScreenCtx }) {
           />
         </div>
 
+        <div style={{ marginTop: '16px' }}>
+          <SelectField
+            name="rolesToBeExcludedFromTranslation"
+            id="rolesToBeExcludedFromTranslation"
+            label="Roles to be excluded from this plugin"
+            value={rolesToBeExcluded.map((roleId) => {
+              const role = roles.find((r) => r.id === roleId);
+              return {
+                label: role?.name ?? roleId,
+                value: roleId,
+              };
+            })}
+            selectInputProps={{
+              isMulti: true,
+              options: roles.map((role) => ({
+                label: role.name ?? '',
+                value: role.id ?? '',
+              })),
+            }}
+            onChange={(newValue) => {
+              const selectedRoles = newValue.map((v) => v.value);
+              setRolesToBeExcluded(selectedRoles);
+            }}
+          />
+        </div>
+
         {/* Prompt input section, including a custom hover-based tooltip for placeholders usage */}
         <div className={s.promptContainer}>
           <label
@@ -382,6 +432,7 @@ export default function ConfigScreen({ ctx }: { ctx: RenderConfigScreenCtx }) {
                 translateWholeRecord,
                 prompt,
                 modelsToBeExcluded,
+                rolesToBeExcluded,
                 setIsLoading
               )
             }
