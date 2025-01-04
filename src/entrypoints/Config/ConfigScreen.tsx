@@ -242,37 +242,39 @@ export default function ConfigScreen({ ctx }: { ctx: RenderConfigScreenCtx }) {
         />
 
         {/* GPT Model dropdown selector */}
-        <div className={s.modelSelect}>
-          <span>GPT Model:</span>
-          <Dropdown
-            renderTrigger={({ open, onClick }) => (
-              <Button
-                onClick={onClick}
-                rightIcon={open ? <CaretUpIcon /> : <CaretDownIcon />}
-              >
-                {gptModel}
-              </Button>
-            )}
-          >
-            <DropdownMenu>
-              {listOfModels.length === 1 && (
-                <DropdownOption>{listOfModels[0]}</DropdownOption>
+        <div className={s.dropdownLabel}>
+          <span className={s.label}>GPT Model*</span>
+          <div className={s.modelSelect}>
+            <Dropdown
+              renderTrigger={({ open, onClick }) => (
+                <Button
+                  onClick={onClick}
+                  rightIcon={open ? <CaretUpIcon /> : <CaretDownIcon />}
+                >
+                  {gptModel}
+                </Button>
               )}
-              {listOfModels
-                .filter((model) => model.toLowerCase().includes('gpt'))
-                .map((model) => (
-                  <DropdownOption
-                    key={model}
-                    onClick={() => setGptModel(model)}
-                  >
-                    {model}
-                  </DropdownOption>
-                ))}
-            </DropdownMenu>
-          </Dropdown>
-          <span className={s.tooltipConfig}>
-            Using gpt-4o-mini is recommended
-          </span>
+            >
+              <DropdownMenu>
+                {listOfModels.length === 1 && (
+                  <DropdownOption>{listOfModels[0]}</DropdownOption>
+                )}
+                {listOfModels
+                  .filter((model) => model.toLowerCase().includes('gpt'))
+                  .map((model) => (
+                    <DropdownOption
+                      key={model}
+                      onClick={() => setGptModel(model)}
+                    >
+                      {model}
+                    </DropdownOption>
+                  ))}
+              </DropdownMenu>
+            </Dropdown>
+            <span className={s.tooltipConfig}>
+              Using gpt-4o-mini is recommended
+            </span>
+          </div>
         </div>
 
         {/* A multi-select component that lets users choose which field types can be translated */}

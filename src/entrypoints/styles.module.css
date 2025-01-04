@@ -9,7 +9,12 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  margin: 16px 0px;
+  margin-bottom: 16px;
+}
+
+.dropdownLabel {
+  margin-bottom: 8px;
+  margin-top: 16px;
 }
 
 .optionContainer {
