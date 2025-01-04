@@ -59,7 +59,9 @@ export async function translateRecordFields(
   // We'll translate only fields that can be translated (excluded by `fieldsThatDontNeedTranslation` in TranslateField)
   // We'll rely on translateFieldValue to skip irrelevant fields.
   // For each field, if it's localized and can be translated, we do so.
-  const fieldsArray = Object.values(ctx.fields);
+  const fieldsArray = Object.values(ctx.fields).filter(
+    (field) => field?.relationships.item_type.data.id === ctx.itemType.id
+  );
 
   for (const field of fieldsArray) {
     const fieldType = field!.attributes.appearance.editor;
