@@ -50,9 +50,12 @@ export function removeIds(obj: unknown): any {
 }
 
 /**
- * Reconstructs the original object by replacing each 'text' field
- * with the next value from the `textValues` array. Commonly used after
- * translating individual text nodes.
+ * Reconstructs an object by replacing 'text' fields with values from a given array of strings.
+ * This is used after translating the strings extracted by `extractTextValues`.
+ *
+ * @param originalObject The original object with text fields.
+ * @param textValues The array of translated text strings.
+ * @returns The reconstructed object with translated text inserted back in.
  */
 export function reconstructObject(
   originalObject: unknown,

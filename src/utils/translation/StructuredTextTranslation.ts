@@ -69,7 +69,7 @@ export async function translateStructuredTextValue(
     .replace('{fromLocale}', fromLocaleName)
     .replace('{toLocale}', toLocaleName);
 
-  prompt += `\nReturn the translated strings array in a valid JSON format. The number of returned strings should match the original. Do not trim any empty strings or spaces. The number of returned strings should match the original. Do not trim any empty strings or spaces.`;
+  prompt += `\nReturn the translated strings array in a valid JSON format. The number of returned strings should match the original. Do not trim any empty strings or spaces. The number of returned strings should match the original. Do not trim any empty strings or spaces. Return just the array of strings, do not nest the array into an object.`;
   // Inline text translation via OpenAI
   const inlineCompletion = await openai.chat.completions.create({
     messages: [
@@ -86,18 +86,6 @@ export async function translateStructuredTextValue(
     inlineCompletion.choices[0].message.content || '[]'
   );
 
-  // Translate block nodes individually using translateFieldValue
-  const translatedBlockNodes = await translateFieldValue(
-    blockNodes,
-    pluginParams,
-    toLocale,
-    fromLocale,
-    'rich_text', // treat blocks as rich_text
-    openai,
-    '',
-    apiToken
-  );
-
   // Reconstruct the inline text portion with the newly translated text
   const reconstructedObject = reconstructObject(
     fieldValueWithoutBlocks,
@@ -106,16 +94,30 @@ export async function translateStructuredTextValue(
 
   // Insert block nodes back into their original positions
   let finalReconstructedObject = reconstructedObject;
-  for (const node of translatedBlockNodes as any[]) {
-    finalReconstructedObject = insertObjectAtIndex(
-      finalReconstructedObject,
-      node,
-      node.originalIndex
+
+  if (blockNodes.length > 0) {
+    // Translate block nodes individually using translateFieldValue
+    const translatedBlockNodes = await translateFieldValue(
+      blockNodes,
+      pluginParams,
+      toLocale,
+      fromLocale,
+      'rich_text', // treat blocks as rich_text
+      openai,
+      '',
+      apiToken
     );
+    for (const node of translatedBlockNodes as any[]) {
+      finalReconstructedObject = insertObjectAtIndex(
+        finalReconstructedObject as any[],
+        node,
+        node.originalIndex
+      );
+    }
   }
 
   // Remove temporary 'originalIndex' keys
-  const cleanedReconstructedObject = finalReconstructedObject.map(
+  const cleanedReconstructedObject = (finalReconstructedObject as any[]).map(
     ({
       originalIndex,
       ...rest

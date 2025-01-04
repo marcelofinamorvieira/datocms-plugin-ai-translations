@@ -200,6 +200,7 @@ const TranslateField = async (
     ctx.currentUserAccessToken!
   );
 
+  
   // Set the new value in the correct locale
   ctx.setFieldValue(fieldPathArray.join('.'), translated);
 
