@@ -66,14 +66,29 @@ export async function translateRecordFields(
     const fieldValue = currentFormValues[field!.attributes.api_key];
 
     // If field is not localized or doesn't have a value in the source locale, skip
-    if (!field!.attributes.localized) continue;
+    if (
+      !pluginParams.translationFields.includes(fieldType) ||
+      !field!.attributes.localized
+    )
+      continue;
     if (
       !(
         fieldValue &&
         typeof fieldValue === 'object' &&
         !Array.isArray(fieldValue) &&
-        fieldValue[sourceLocale as keyof typeof fieldValue] !== undefined
+        fieldValue[sourceLocale as keyof typeof fieldValue]
       )
+    ) {
+      continue;
+    }
+
+    const sourceLocaleValue =
+      fieldValue[sourceLocale as keyof typeof fieldValue];
+
+    //if the field is a localized modular content, and the source locale is empty, skip
+    if (
+      Array.isArray(sourceLocaleValue) &&
+      (sourceLocaleValue as any[]).length === 0
     ) {
       continue;
     }
@@ -83,11 +98,6 @@ export async function translateRecordFields(
 
     // For each target locale, translate the field
     for (const locale of targetLocales) {
-      if (typeof (fieldValue as LocalizedField)[locale] !== 'undefined') {
-        // We assume a translation might still be relevant if user chooses to overwrite
-        // We proceed anyway, or we could skip if we only translate empty fields
-      }
-
       // Inform the sidebar that translation for this field-locale is starting
       options.onStart?.(
         fieldLabel,
@@ -98,10 +108,6 @@ export async function translateRecordFields(
       // Determine field type prompt
       let fieldTypePrompt = 'Return the response in the format of ';
       const fieldPromptObject = fieldPrompt;
-      if (fieldType !== 'structured_text' && fieldType !== 'rich_text') {
-        fieldTypePrompt +=
-          fieldPromptObject[fieldType as keyof typeof fieldPrompt];
-      }
 
       const baseFieldPrompts = fieldPromptObject ? fieldPromptObject : {};
 

@@ -24,7 +24,7 @@ export async function translateDefaultFieldValue(
   toLocale: string,
   fromLocale: string,
   openai: OpenAI,
-  fieldTypePrompt: string,
+  fieldTypePrompt: string
 ): Promise<string> {
   // Use locale-codes for locale names
   const fromLocaleName = locale.getByTag(fromLocale)?.name || fromLocale;
@@ -50,9 +50,10 @@ export async function translateDefaultFieldValue(
   });
 
   // Handle special JSON responses
+  console.log(fieldTypePrompt);
   if (
     fieldTypePrompt ===
-    'Return the response in the format of A valid JSON string. Only return the json string, nothing else'
+    'Return the response in the format of A valid JSON string. Only return the json string, nothing else. Ignore previous instructions about quotes. Just dont wrap the whole json string in quotes, but wrap key and values in quotes'
   ) {
     return completion.choices[0].message.content || '';
   }
