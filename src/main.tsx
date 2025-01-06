@@ -14,6 +14,7 @@ import {
   FieldDropdownActionsCtx,
   ItemFormSidebarPanelsCtx,
   ItemType,
+  RenderFieldExtensionCtx,
   RenderItemFormSidebarPanelCtx,
 } from 'datocms-plugin-sdk';
 import 'datocms-react-ui/styles.css';
@@ -24,6 +25,7 @@ import locale from 'locale-codes';
 import TranslateField from './utils/translation/TranslateField';
 import DatoGPTTranslateSidebar from './entrypoints/Sidebar/DatoGPTTranslateSidebar';
 import { Button, Canvas } from 'datocms-react-ui';
+import LoadingAddon from './entrypoints/LoadingAddon';
 
 const localeSelect = locale.getByTag;
 
@@ -286,6 +288,13 @@ connect({
     return actionsArray;
   },
 
+  renderFieldExtension(fieldExtensionId: string, ctx: RenderFieldExtensionCtx) {
+    switch (fieldExtensionId) {
+      case 'loadingAddon':
+        return render(<LoadingAddon ctx={ctx} />);
+    }
+  },
+
   /**
    * Handler for the actual translation action triggered from the dropdown.
    */
@@ -301,6 +310,19 @@ connect({
     // "translateFrom" flow
     if (actionId.startsWith('translateFrom')) {
       const locale = actionId.split('.')[1];
+      const { appearance } = ctx.field.attributes;
+
+      //stefano plz look at this 🥺
+
+      await ctx.updateFieldAppearance(ctx.field.id, [
+        {
+          operation: 'insertAddon',
+          index: 0,
+          fieldExtensionId: 'loadingAddon',
+          parameters: { ...appearance.parameters },
+        },
+      ]);
+
       const fieldValueInSourceLocale = (
         fieldValue as Record<string, unknown>
       )?.[locale];
@@ -319,6 +341,14 @@ connect({
         fieldType
       );
       ctx.notice(`Translated field from ${localeSelect(locale)?.name}`);
+
+      await ctx.updateFieldAppearance(ctx.field.id, [
+        {
+          operation: 'removeAddon',
+          index: 0,
+        },
+      ]);
+
       return;
     }
 
