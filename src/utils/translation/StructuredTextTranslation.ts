@@ -14,6 +14,11 @@ import {
 } from './utils';
 import { removeIds } from './utils';
 
+type StreamCallbacks = {
+  onStream?: (chunk: string) => void;
+  onComplete?: () => void;
+};
+
 /**
  * Translates a structured text field, also handling block nodes that can contain nested fields.
  * @param fieldValue - the structured text data array.
@@ -22,6 +27,7 @@ import { removeIds } from './utils';
  * @param fromLocale - source locale code.
  * @param openai - instance of the OpenAI client.
  * @param apiToken - DatoCMS user access token for fetching block structures.
+ * @param streamCallbacks - optional stream callbacks for handling translation progress.
  * @returns updated structured text data with all strings translated.
  */
 export async function translateStructuredTextValue(
@@ -30,12 +36,11 @@ export async function translateStructuredTextValue(
   toLocale: string,
   fromLocale: string,
   openai: OpenAI,
-  apiToken: string
+  apiToken: string,
+  streamCallbacks?: StreamCallbacks
 ): Promise<unknown> {
-  // Remove any 'id' fields
   const noIdFieldValue = removeIds(fieldValue);
 
-  // Separate out block nodes
   const blockNodes = (noIdFieldValue as Array<unknown>).reduce(
     (acc: any[], node: any, index: number) => {
       if (node?.type === 'block') {
@@ -46,15 +51,12 @@ export async function translateStructuredTextValue(
     []
   );
 
-  // Filter out block nodes for inline translation first
   const fieldValueWithoutBlocks = (noIdFieldValue as Array<unknown>).filter(
     (node: any) => node?.type !== 'block'
   );
 
-  // Extract text strings from the structured text
   const textValues = extractTextValues(fieldValueWithoutBlocks);
 
-  // Build prompt for translating inline text
   const fromLocaleName = locale.getByTag(fromLocale)?.name || fromLocale;
   const toLocaleName = locale.getByTag(toLocale)?.name || toLocale;
   let prompt = pluginParams.prompt
@@ -69,63 +71,75 @@ export async function translateStructuredTextValue(
     .replace('{fromLocale}', fromLocaleName)
     .replace('{toLocale}', toLocaleName);
 
-  prompt += `\nReturn the translated strings array in a valid JSON format. The number of returned strings should match the original. Do not trim any empty strings or spaces. The number of returned strings should match the original. Do not trim any empty strings or spaces. Return just the array of strings, do not nest the array into an object.`;
-  // Inline text translation via OpenAI
-  const inlineCompletion = await openai.chat.completions.create({
-    messages: [
-      {
-        role: 'system',
-        content: prompt,
-      },
-    ],
-    model: pluginParams.gptModel,
-  });
+  prompt += `\nReturn the translated strings array in a valid JSON format. The number of returned strings should match the original. Do not trim any empty strings or spaces. Return just the array of strings, do not nest the array into an object.`;
 
-  // Parse the inline translations array
-  const returnedTextValues = JSON.parse(
-    inlineCompletion.choices[0].message.content || '[]'
-  );
+  try {
+    let translatedText = '';
+    const stream = await openai.chat.completions.create({
+      messages: [{ role: 'user', content: prompt }],
+      model: pluginParams.gptModel,
+      stream: true,
+    });
 
-  // Reconstruct the inline text portion with the newly translated text
-  const reconstructedObject = reconstructObject(
-    fieldValueWithoutBlocks,
-    returnedTextValues
-  );
-
-  // Insert block nodes back into their original positions
-  let finalReconstructedObject = reconstructedObject;
-
-  if (blockNodes.length > 0) {
-    // Translate block nodes individually using translateFieldValue
-    const translatedBlockNodes = await translateFieldValue(
-      blockNodes,
-      pluginParams,
-      toLocale,
-      fromLocale,
-      'rich_text', // treat blocks as rich_text
-      openai,
-      '',
-      apiToken
-    );
-    for (const node of translatedBlockNodes as any[]) {
-      finalReconstructedObject = insertObjectAtIndex(
-        finalReconstructedObject as any[],
-        node,
-        node.originalIndex
-      );
+    for await (const chunk of stream) {
+      const content = chunk.choices[0]?.delta?.content || '';
+      translatedText += content;
+      if (streamCallbacks?.onStream) {
+        streamCallbacks.onStream(translatedText);
+      }
     }
+
+    if (streamCallbacks?.onComplete) {
+      streamCallbacks.onComplete();
+    }
+
+    // Parse the inline translations array
+    const returnedTextValues = JSON.parse(translatedText || '[]');
+
+    // Reconstruct the inline text portion with the newly translated text
+    const reconstructedObject = reconstructObject(
+      fieldValueWithoutBlocks,
+      returnedTextValues
+    );
+
+    let finalReconstructedObject = reconstructedObject;
+
+    if (blockNodes.length > 0) {
+      // Translate block nodes individually using translateFieldValue
+      const translatedBlockNodes = await translateFieldValue(
+        blockNodes,
+        pluginParams,
+        toLocale,
+        fromLocale,
+        'rich_text',
+        openai,
+        '',
+        apiToken,
+        streamCallbacks
+      );
+      for (const node of translatedBlockNodes as any[]) {
+        finalReconstructedObject = insertObjectAtIndex(
+          finalReconstructedObject as any[],
+          node,
+          node.originalIndex
+        );
+      }
+    }
+
+    // Remove temporary 'originalIndex' keys
+    const cleanedReconstructedObject = (finalReconstructedObject as any[]).map(
+      ({
+        originalIndex,
+        ...rest
+      }: {
+        originalIndex?: number;
+        [key: string]: any;
+      }) => rest
+    );
+
+    return cleanedReconstructedObject;
+  } catch (error) {
+    console.error('Translation error:', error);
+    throw error;
   }
-
-  // Remove temporary 'originalIndex' keys
-  const cleanedReconstructedObject = (finalReconstructedObject as any[]).map(
-    ({
-      originalIndex,
-      ...rest
-    }: {
-      originalIndex?: number;
-      [key: string]: any;
-    }) => rest
-  );
-
-  return cleanedReconstructedObject;
 }

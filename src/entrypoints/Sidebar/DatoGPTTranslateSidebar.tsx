@@ -68,6 +68,7 @@ export default function DatoGPTTranslateSidebar({ ctx }: PropTypes) {
       locale: string;
       status: 'pending' | 'done';
       fieldPath: string;
+      streamingContent?: string;
     }[]
   >([]);
 
@@ -147,18 +148,25 @@ export default function DatoGPTTranslateSidebar({ ctx }: PropTypes) {
         selectedLocale,
         {
           onStart: (fieldLabel, locale, fieldPath) => {
-            // Add a new bubble to represent this translation's start
             setTranslationBubbles((prev) => [
               ...prev,
               { fieldLabel, locale, status: 'pending', fieldPath },
             ]);
           },
-          onComplete: (fieldLabel, locale) => {
-            // Update the bubble to 'done' status
+          onStream: (fieldLabel, locale, content) => {
             setTranslationBubbles((prev) =>
               prev.map((bubble) =>
                 bubble.fieldLabel === fieldLabel && bubble.locale === locale
-                  ? { ...bubble, status: 'done' }
+                  ? { ...bubble, streamingContent: content }
+                  : bubble
+              )
+            );
+          },
+          onComplete: (fieldLabel, locale) => {
+            setTranslationBubbles((prev) =>
+              prev.map((bubble) =>
+                bubble.fieldLabel === fieldLabel && bubble.locale === locale
+                  ? { ...bubble, status: 'done', streamingContent: undefined }
                   : bubble
               )
             );
@@ -166,12 +174,10 @@ export default function DatoGPTTranslateSidebar({ ctx }: PropTypes) {
         }
       );
 
-      // After success, show success message
       ctx.notice('All fields translated successfully');
       setShowTimer(true);
       setProgress(100);
     } catch (error: any) {
-      // Show error alert if something goes wrong
       ctx.alert(
         error.message || 'An unknown error occurred during translation'
       );

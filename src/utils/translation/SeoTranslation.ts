@@ -7,6 +7,11 @@ import OpenAI from 'openai';
 import locale from 'locale-codes';
 import { ctxParamsType } from '../../entrypoints/Config/ConfigScreen';
 
+type StreamCallbacks = {
+  onStream?: (chunk: string) => void;
+  onComplete?: () => void;
+};
+
 /**
  * Translates an SEO field value, which usually contains title/description.
  * @param fieldValue - the SEO data object.
@@ -15,6 +20,7 @@ import { ctxParamsType } from '../../entrypoints/Config/ConfigScreen';
  * @param fromLocale - source locale for translation.
  * @param openai - OpenAI client instance.
  * @param fieldTypePrompt - additional instructions for formatting.
+ * @param streamCallbacks - optional stream callbacks for handling translation progress.
  * @returns the updated SEO object with translated title/description.
  */
 export async function translateSeoFieldValue(
@@ -23,20 +29,18 @@ export async function translateSeoFieldValue(
   toLocale: string,
   fromLocale: string,
   openai: OpenAI,
-  fieldTypePrompt: string
-): Promise<Record<string, string>> {
-  // Ensure we can safely treat fieldValue as an object
+  fieldTypePrompt: string,
+  streamCallbacks?: StreamCallbacks
+): Promise<unknown> {
   const seoObject = fieldValue as Record<string, string>;
   const seoObjectToTranslate = {
     title: seoObject.title || '',
     description: seoObject.description || '',
   };
 
-  // Use locale-codes for locale names
   const fromLocaleName = locale.getByTag(fromLocale)?.name || fromLocale;
   const toLocaleName = locale.getByTag(toLocale)?.name || toLocale;
 
-  // Build the prompt
   let formattedPrompt = pluginParams.prompt
     .replace('{fieldValue}', JSON.stringify(seoObjectToTranslate))
     .replace('{fromLocale}', fromLocaleName)
@@ -44,25 +48,36 @@ export async function translateSeoFieldValue(
 
   formattedPrompt += `\n${fieldTypePrompt}`;
 
-  // Get the translation
-  const seoCompletion = await openai.chat.completions.create({
-    messages: [
-      {
-        role: 'system',
-        content: formattedPrompt,
-      },
-    ],
-    model: pluginParams.gptModel,
-  });
+  try {
+    let translatedText = '';
+    const stream = await openai.chat.completions.create({
+      messages: [{ role: 'user', content: formattedPrompt }],
+      model: pluginParams.gptModel,
+      stream: true,
+    });
 
-  // Parse the returned object
-  const returnedSeoObject = JSON.parse(
-    seoCompletion.choices[0].message.content || '{}'
-  );
+    for await (const chunk of stream) {
+      const content = chunk.choices[0]?.delta?.content || '';
+      translatedText += content;
+      if (streamCallbacks?.onStream) {
+        streamCallbacks.onStream(translatedText);
+      }
+    }
 
-  // Update the original seoObject
-  seoObject.title = returnedSeoObject.title || seoObject.title;
-  seoObject.description = returnedSeoObject.description || seoObject.description;
+    if (streamCallbacks?.onComplete) {
+      streamCallbacks.onComplete();
+    }
 
-  return seoObject;
+    // Parse the returned object
+    const returnedSeoObject = JSON.parse(translatedText || '{}');
+
+    // Update the original seoObject
+    seoObject.title = returnedSeoObject.title || seoObject.title;
+    seoObject.description = returnedSeoObject.description || seoObject.description;
+
+    return seoObject;
+  } catch (error) {
+    console.error('Translation error:', error);
+    throw error;
+  }
 }

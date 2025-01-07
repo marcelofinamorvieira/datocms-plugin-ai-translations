@@ -13,18 +13,14 @@ import { translateSeoFieldValue } from './SeoTranslation';
 import { translateStructuredTextValue } from './StructuredTextTranslation';
 import { deleteItemIdKeys } from './utils';
 
+type StreamCallbacks = {
+  onStream?: (chunk: string) => void;
+  onComplete?: () => void;
+};
+
 /**
  * Main function to handle field translation. Decides which specialized
  * translator to use based on field type, e.g., 'seo', 'structured_text'.
- * @param fieldValue - current field value to be translated.
- * @param pluginParams - plugin config containing OpenAI keys, selected models, etc.
- * @param toLocale - target locale code.
- * @param fromLocale - source locale code.
- * @param fieldType - the field editor type (e.g. 'seo', 'structured_text').
- * @param openai - instance of the OpenAI client.
- * @param fieldTypePrompt - prompt additions for formatting the result.
- * @param apiToken - DatoCMS user token to fetch block or model data if necessary.
- * @returns the translated value for the field.
  */
 export async function translateFieldValue(
   fieldValue: unknown,
@@ -34,62 +30,30 @@ export async function translateFieldValue(
   fieldType: string,
   openai: OpenAI,
   fieldTypePrompt: string,
-  apiToken: string
+  apiToken: string,
+  streamCallbacks?: StreamCallbacks
 ): Promise<unknown> {
   // If this field type is not in the plugin config or has no value, return as is
   if (!pluginParams.translationFields.includes(fieldType) || !fieldValue) {
     return fieldValue;
   }
 
+  const commonArgs = [fieldValue, pluginParams, toLocale, fromLocale, openai] as const;
+
   switch (fieldType) {
     case 'seo':
-      return translateSeoFieldValue(
-        fieldValue,
-        pluginParams,
-        toLocale,
-        fromLocale,
-        openai,
-        fieldTypePrompt
-      );
+      return translateSeoFieldValue(...commonArgs, fieldTypePrompt, streamCallbacks);
     case 'structured_text':
-      return translateStructuredTextValue(
-        fieldValue,
-        pluginParams,
-        toLocale,
-        fromLocale,
-        openai,
-        apiToken
-      );
+      return translateStructuredTextValue(...commonArgs, apiToken, streamCallbacks);
     case 'rich_text':
-      // treat "rich_text" as a set of blocks
-      return translateBlockValue(
-        fieldValue,
-        pluginParams,
-        toLocale,
-        fromLocale,
-        openai,
-        apiToken
-      );
+      return translateBlockValue(...commonArgs, apiToken, streamCallbacks);
     default:
-      return translateDefaultFieldValue(
-        fieldValue,
-        pluginParams,
-        toLocale,
-        fromLocale,
-        openai,
-        fieldTypePrompt
-      );
+      return translateDefaultFieldValue(...commonArgs, fieldTypePrompt, streamCallbacks);
   }
 }
 
 /**
  * Specifically handles block-based fields in a rich text.
- * @param fieldValue - the block array from a structured text.
- * @param pluginParams - plugin config for the translation.
- * @param toLocale - target locale code.
- * @param fromLocale - source locale code.
- * @param openai - instance of OpenAI.
- * @param apiToken - DatoCMS user token, needed to fetch block fields.
  */
 export async function translateBlockValue(
   fieldValue: unknown,
@@ -97,7 +61,8 @@ export async function translateBlockValue(
   toLocale: string,
   fromLocale: string,
   openai: OpenAI,
-  apiToken: string
+  apiToken: string,
+  streamCallbacks?: StreamCallbacks
 ) {
   // Clean block array from any leftover item IDs
   const cleanedFieldValue = deleteItemIdKeys(fieldValue);
@@ -141,7 +106,8 @@ export async function translateBlockValue(
         fieldTypeDictionary[field],
         openai,
         nestedPrompt,
-        apiToken
+        apiToken,
+        streamCallbacks
       );
     }
   }
@@ -151,14 +117,7 @@ export async function translateBlockValue(
 
 /**
  * This is the top-level function called by the plugin to translate
- * a field to a given locale. It handles UI changes (disable, re-enable)
- * and then updates the field with the translated content.
- * @param fieldValue - current field value to be translated.
- * @param ctx - the DatoCMS action context object.
- * @param pluginParams - plugin config with model, API key, etc.
- * @param toLocale - target locale.
- * @param fromLocale - source locale.
- * @param fieldType - the type of field being translated.
+ * a field to a given locale.
  */
 const TranslateField = async (
   fieldValue: unknown,
@@ -166,7 +125,8 @@ const TranslateField = async (
   pluginParams: ctxParamsType,
   toLocale: string,
   fromLocale: string,
-  fieldType: string
+  fieldType: string,
+  streamCallbacks?: StreamCallbacks
 ) => {
   // Break down fieldPath to point to the target locale in a localized field
   const fieldPathArray = ctx.fieldPath.split('.');
@@ -197,10 +157,10 @@ const TranslateField = async (
     fieldType,
     newOpenai,
     fieldTypePrompt,
-    ctx.currentUserAccessToken!
+    ctx.currentUserAccessToken!,
+    streamCallbacks
   );
 
-  
   // Set the new value in the correct locale
   ctx.setFieldValue(fieldPathArray.join('.'), translated);
 

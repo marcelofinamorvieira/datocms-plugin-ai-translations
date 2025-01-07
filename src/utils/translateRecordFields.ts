@@ -35,6 +35,7 @@ import { translateFieldValue } from './translation/TranslateField';
 type TranslateOptions = {
   onStart?: (fieldLabel: string, locale: string, fieldPath: string) => void;
   onComplete?: (fieldLabel: string, locale: string) => void;
+  onStream?: (fieldLabel: string, locale: string, content: string) => void;
 };
 
 interface LocalizedField {
@@ -119,7 +120,17 @@ export async function translateRecordFields(
           baseFieldPrompts[fieldType as keyof typeof baseFieldPrompts] || '';
       }
 
-      // Translate the field value
+      // Create streaming callbacks for this field-locale pair
+      const streamCallbacks = {
+        onStream: (chunk: string) => {
+          options.onStream?.(fieldLabel, locale, chunk);
+        },
+        onComplete: () => {
+          options.onComplete?.(fieldLabel, locale);
+        },
+      };
+
+      // Translate the field value with streaming support
       const translatedFieldValue = await translateFieldValue(
         (fieldValue as LocalizedField)[sourceLocale],
         pluginParams,
@@ -128,7 +139,8 @@ export async function translateRecordFields(
         fieldType,
         openai,
         fieldTypePrompt,
-        ctx.currentUserAccessToken!
+        ctx.currentUserAccessToken!,
+        streamCallbacks
       );
 
       // Update form values with the translated field
@@ -136,9 +148,6 @@ export async function translateRecordFields(
         field!.attributes.api_key + '.' + locale,
         translatedFieldValue
       );
-
-      // Inform the sidebar that this field-locale translation is completed
-      options.onComplete?.(fieldLabel, locale);
     }
   }
 }
