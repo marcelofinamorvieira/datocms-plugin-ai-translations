@@ -4,7 +4,9 @@ import { AiOutlineOpenAI } from 'react-icons/ai';
 import { BsCheckCircleFill } from 'react-icons/bs';
 import { Theme } from 'datocms-plugin-sdk';
 import styles from '../../../styles.module.css';
+import locale from 'locale-codes';
 
+const localeSelect = locale.getByTag;
 /**
  * ChatbubbleTranslate.tsx
  *
@@ -187,12 +189,14 @@ export function ChatBubble({ bubble, theme }: Props) {
               {bubble.status === 'pending' ? (
                 <>
                   "<strong>{bubble.fieldLabel}</strong>" to{' '}
-                  <strong>{bubble.locale}</strong>...
+                  <strong>{localeSelect(bubble.locale)?.name}</strong>{' '}
+                  [<code>{bubble.locale}</code>]
                 </>
               ) : (
                 <>
                   "<strong>{bubble.fieldLabel}</strong>" to{' '}
-                  <strong>{bubble.locale}</strong>
+                  <strong>{localeSelect(bubble.locale)?.name}</strong>{' '}
+                  [<code>{bubble.locale}</code>]
                 </>
               )}
             </span>

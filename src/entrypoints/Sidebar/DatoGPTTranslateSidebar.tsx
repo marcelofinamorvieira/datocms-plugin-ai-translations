@@ -5,9 +5,10 @@ import { ctxParamsType } from '../Config/ConfigScreen';
 import { motion, AnimatePresence } from 'framer-motion';
 import { translateRecordFields } from '../../utils/translateRecordFields';
 import { ChatBubble } from './Components/ChatbubbleTranslate';
-import { MdCelebration } from "react-icons/md";
+import { MdCelebration } from 'react-icons/md';
+import locale from 'locale-codes';
 
-
+const localeSelect = locale.getByTag;
 /**
  * DatoGPTTranslateSidebar.tsx
  *
@@ -210,18 +211,25 @@ export default function DatoGPTTranslateSidebar({ ctx }: PropTypes) {
                 justifyContent: 'center',
               }}
             >
-              <h3>From</h3>
+              <h3 style={{ marginRight: '-12px' }}>From</h3>
               <SelectField
                 name="fromLocale"
                 id="fromLocale"
                 label=""
-                value={[{ label: selectedLocale, value: selectedLocale }]}
+                value={[
+                  {
+                    label: `${
+                      localeSelect(selectedLocale)?.name
+                    } [${selectedLocale}]`,
+                    value: selectedLocale,
+                  },
+                ]}
                 selectInputProps={{
                   isMulti: false,
                   options: (
                     ctx.formValues.internalLocales as Array<string>
                   ).map((locale) => ({
-                    label: locale,
+                    label: `${localeSelect(locale)?.name} [${locale}]`,
                     value: locale,
                   })),
                 }}
@@ -243,7 +251,7 @@ export default function DatoGPTTranslateSidebar({ ctx }: PropTypes) {
                 id="toLocales"
                 label=""
                 value={selectedLocales.map((locale) => ({
-                  label: locale,
+                  label: `${localeSelect(locale)?.name} [${locale}]`,
                   value: locale,
                 }))}
                 selectInputProps={{
@@ -251,7 +259,7 @@ export default function DatoGPTTranslateSidebar({ ctx }: PropTypes) {
                   options: (ctx.formValues.internalLocales as Array<string>)
                     .filter((locale) => locale !== selectedLocale)
                     .map((locale) => ({
-                      label: locale,
+                      label: `${localeSelect(locale)?.name} [${locale}]`,
                       value: locale,
                     })),
                 }}
