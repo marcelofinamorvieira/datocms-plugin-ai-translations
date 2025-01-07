@@ -310,18 +310,6 @@ connect({
     // "translateFrom" flow
     if (actionId.startsWith('translateFrom')) {
       const locale = actionId.split('.')[1];
-      const { appearance } = ctx.field.attributes;
-
-      //stefano plz look at this 🥺
-
-      await ctx.updateFieldAppearance(ctx.field.id, [
-        {
-          operation: 'insertAddon',
-          index: 0,
-          fieldExtensionId: 'loadingAddon',
-          parameters: { ...appearance.parameters },
-        },
-      ]);
 
       const fieldValueInSourceLocale = (
         fieldValue as Record<string, unknown>
@@ -341,13 +329,6 @@ connect({
         fieldType
       );
       ctx.notice(`Translated field from ${localeSelect(locale)?.name}`);
-
-      await ctx.updateFieldAppearance(ctx.field.id, [
-        {
-          operation: 'removeAddon',
-          index: 0,
-        },
-      ]);
 
       return;
     }
