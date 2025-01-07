@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { AiOutlineOpenAI } from 'react-icons/ai';
-import { BsCheckCircleFill, BsArrowReturnRight } from 'react-icons/bs';
+import { BsCheckCircleFill } from 'react-icons/bs';
 import { Theme } from 'datocms-plugin-sdk';
 import styles from '../../../styles.module.css';
 
@@ -81,70 +81,54 @@ export function ChatBubble({ bubble, theme }: Props) {
   };
 
   const tooltipVariants = {
-    initial: { 
+    initial: {
       opacity: 0,
       scale: 0.95,
     },
-    animate: { 
+    animate: {
       opacity: 1,
       scale: 1,
       transition: {
         opacity: {
           duration: 0.2,
-          ease: 'easeOut'
+          ease: 'easeOut',
         },
         scale: {
           duration: 0.2,
-          ease: 'easeOut'
-        }
-      }
+          ease: 'easeOut',
+        },
+      },
     },
-    exit: { 
+    exit: {
       opacity: 0,
       scale: 0.95,
       transition: {
         opacity: {
           duration: 0.15,
-          ease: 'easeIn'
+          ease: 'easeIn',
         },
         scale: {
           duration: 0.15,
-          ease: 'easeIn'
-        }
-      }
-    }
-  };
-
-  const contentVariants = {
-    initial: { opacity: 0 },
-    animate: { 
-      opacity: 1,
-      transition: {
-        duration: 0.4
-      }
+          ease: 'easeIn',
+        },
+      },
     },
-    exit: { 
-      opacity: 0,
-      transition: {
-        duration: 0.3
-      }
-    }
   };
 
   const streamingTextVariants = {
     initial: { opacity: 0 },
-    animate: { 
+    animate: {
       opacity: 1,
       transition: {
-        opacity: { duration: 0.3 }
-      }
+        opacity: { duration: 0.3 },
+      },
     },
-    exit: { 
+    exit: {
       opacity: 0,
       transition: {
-        opacity: { duration: 0.2 }
-      }
-    }
+        opacity: { duration: 0.2 },
+      },
+    },
   };
 
   // Conditional icon animation:
@@ -176,14 +160,18 @@ export function ChatBubble({ bubble, theme }: Props) {
         initial="initial"
         animate="animate"
         exit="exit"
-        className={`${styles.bubbleContainer} ${bubble.status === 'done' ? styles.done : ''}`}
+        className={`${styles.bubbleContainer} ${
+          bubble.status === 'done' ? styles.done : ''
+        }`}
       >
         <motion.div
           className={styles.bubble}
           style={{
             backgroundColor,
             color: textColor,
-            border: `1px solid ${theme.semiTransparentAccentColor || 'rgba(114, 0, 196, 0.1)'}`,
+            border: `1px solid ${
+              theme.semiTransparentAccentColor || 'rgba(114, 0, 196, 0.1)'
+            }`,
           }}
         >
           <motion.div
@@ -210,18 +198,21 @@ export function ChatBubble({ bubble, theme }: Props) {
             </span>
           </div>
           {bubble.status === 'done' && (
-            <BsCheckCircleFill size={16} style={{ color: theme.accentColor || 'rgb(114, 0, 196)' }} />
+            <BsCheckCircleFill
+              size={16}
+              style={{ color: theme.accentColor || 'rgb(114, 0, 196)' }}
+            />
           )}
         </motion.div>
 
         <div className={styles.streamingContainer}>
           {bubble.status === 'pending' && bubble.streamingContent && (
-            <div 
+            <div
               className={styles.hierarchyLine}
               style={{ backgroundColor: `${tooltipTextColor}20` }}
             />
           )}
-          
+
           <AnimatePresence mode="wait">
             {bubble.status === 'pending' && bubble.streamingContent && (
               <motion.div
@@ -234,7 +225,9 @@ export function ChatBubble({ bubble, theme }: Props) {
                 className={styles.streamingBubble}
                 style={{
                   backgroundColor: tooltipBackgroundColor,
-                  border: `1px solid ${theme.semiTransparentAccentColor || 'rgba(114, 0, 196, 0.1)'}`,
+                  border: `1px solid ${
+                    theme.semiTransparentAccentColor || 'rgba(114, 0, 196, 0.1)'
+                  }`,
                 }}
               >
                 <motion.div
