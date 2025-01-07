@@ -320,6 +320,14 @@ connect({
         );
         return;
       }
+
+      ctx.customToast({
+        type: 'warning',
+        message: `Translating "${ctx.field.attributes.label}" from ${
+          localeSelect(locale)?.name
+        }...`,
+        dismissAfterTimeout: true,
+      });
       await TranslateField(
         fieldValueInSourceLocale,
         ctx,
@@ -328,7 +336,11 @@ connect({
         locale,
         fieldType
       );
-      ctx.notice(`Translated field from ${localeSelect(locale)?.name}`);
+      ctx.notice(
+        `Translated "${ctx.field.attributes.label}" from ${
+          localeSelect(locale)?.name
+        }`
+      );
 
       return;
     }
@@ -339,6 +351,11 @@ connect({
 
       // Translate to all locales
       if (locale === 'allLocales') {
+        ctx.customToast({
+          type: 'warning',
+          message: `Translating "${ctx.field.attributes.label}" to all locales...`,
+          dismissAfterTimeout: true,
+        });
         for (const loc of locales) {
           if (loc === ctx.locale) continue;
           await TranslateField(
@@ -350,11 +367,19 @@ connect({
             fieldType
           );
         }
-        ctx.notice('Translated field to all locales');
+        ctx.notice(`Translated "${ctx.field.attributes.label}" to all locales`);
         return;
       }
 
       // Translate to a specific locale
+      ctx.customToast({
+        dismissAfterTimeout: true,
+        type: 'warning',
+        message: `Translating "${ctx.field.attributes.label}" to ${
+          localeSelect(locale)?.name
+        }...`,
+      });
+
       await TranslateField(
         (fieldValue as Record<string, unknown>)?.[ctx.locale],
         ctx,
@@ -363,7 +388,11 @@ connect({
         ctx.locale,
         fieldType
       );
-      ctx.notice(`Translated field to ${localeSelect(locale)?.name}`);
+      ctx.notice(
+        `Translated "${ctx.field.attributes.label}" to ${
+          localeSelect(locale)?.name
+        }`
+      );
       return;
     }
 
