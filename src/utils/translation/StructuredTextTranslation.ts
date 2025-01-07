@@ -71,7 +71,7 @@ export async function translateStructuredTextValue(
     .replace('{fromLocale}', fromLocaleName)
     .replace('{toLocale}', toLocaleName);
 
-  prompt += `\nReturn the translated strings array in a valid JSON format. The number of returned strings should match the original. Do not trim any empty strings or spaces. Return just the array of strings, do not nest the array into an object.`;
+  prompt += `\nReturn the translated strings array in a valid JSON format. The number of returned strings should match the original. Do not trim any empty strings or spaces. Return just the array of strings, do not nest the array into an object.  The number of returned strings should match the original. Spaces and empty strings should remain unaltered. Do not remove any empty strings or spaces.`;
 
   try {
     let translatedText = '';
