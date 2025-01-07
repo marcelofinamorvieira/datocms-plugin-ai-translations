@@ -66,6 +66,17 @@
   font-size: 14px;
   color: #1890ff;
   display: inline-block;
+  cursor: pointer;
+  transition: transform 0.2s ease;
+}
+
+.tooltipConfig:hover {
+  transform: scale(1.025);
+}
+
+.tooltipConfig:active {
+  transform: scale(0.98);
+  transition: transform 0.1s ease;
 }
 
 .buttons {

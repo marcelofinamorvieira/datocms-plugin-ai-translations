@@ -145,7 +145,9 @@ export default function ConfigScreen({ ctx }: { ctx: RenderConfigScreenCtx }) {
   const [apiKey, setApiKey] = useState(pluginParams.apiKey ?? '');
 
   // Local state for the selected GPT model
-  const [gptModel, setGptModel] = useState(pluginParams.gptModel ?? 'None');
+  const [gptModel, setGptModel] = useState(
+    pluginParams.gptModel ?? 'gpt-4o-mini'
+  );
 
   // Local state for which field types can be translated
   const [translationFields, setTranslationFields] = useState<string[]>(
@@ -299,7 +301,10 @@ export default function ConfigScreen({ ctx }: { ctx: RenderConfigScreenCtx }) {
                   ))}
               </DropdownMenu>
             </Dropdown>
-            <span className={s.tooltipConfig}>
+            <span
+              onClick={() => setGptModel('gpt-4o-mini')}
+              className={s.tooltipConfig}
+            >
               Using gpt-4o-mini is recommended
             </span>
           </div>
