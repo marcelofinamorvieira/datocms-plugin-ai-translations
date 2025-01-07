@@ -302,7 +302,10 @@ export default function ConfigScreen({ ctx }: { ctx: RenderConfigScreenCtx }) {
               </DropdownMenu>
             </Dropdown>
             <span
-              onClick={() => setGptModel('gpt-4o-mini')}
+              onClick={() => {
+                setGptModel('gpt-4o-mini');
+                ctx.notice('Selected gpt-4o-mini');
+              }}
               className={s.tooltipConfig}
             >
               Using gpt-4o-mini is recommended
