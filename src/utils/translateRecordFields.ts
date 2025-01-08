@@ -71,7 +71,8 @@ export async function translateRecordFields(
     // If field is not localized or doesn't have a value in the source locale, skip
     if (
       !pluginParams.translationFields.includes(fieldType) ||
-      !field!.attributes.localized
+      !field!.attributes.localized ||
+      pluginParams.apiKeysToBeExcludedFromThisPlugin.includes(field!.id)
     )
       continue;
     if (

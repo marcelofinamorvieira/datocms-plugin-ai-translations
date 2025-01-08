@@ -18,7 +18,10 @@ import {
   RenderItemFormSidebarPanelCtx,
 } from 'datocms-plugin-sdk';
 import 'datocms-react-ui/styles.css';
-import ConfigScreen, { ctxParamsType } from './entrypoints/Config/ConfigScreen';
+import ConfigScreen, {
+  ctxParamsType,
+  translateFieldTypes,
+} from './entrypoints/Config/ConfigScreen';
 import { render } from './utils/render';
 import locale from 'locale-codes';
 // Import the newly refactored translation function
@@ -26,6 +29,7 @@ import TranslateField from './utils/translation/TranslateField';
 import DatoGPTTranslateSidebar from './entrypoints/Sidebar/DatoGPTTranslateSidebar';
 import { Button, Canvas } from 'datocms-react-ui';
 import LoadingAddon from './entrypoints/LoadingAddon';
+import { defaultPrompt } from './prompts/DefaultPrompt';
 
 const localeSelect = locale.getByTag;
 
@@ -53,6 +57,54 @@ connect({
   /**
    * Render the configuration screen, used in the plugin settings.
    */
+  onBoot(ctx) {
+    const pluginParams = ctx.plugin.attributes.parameters as ctxParamsType;
+
+    // Set default values for undefined parameters
+    if (!pluginParams.translationFields) {
+      ctx.updatePluginParameters({
+        ...pluginParams,
+        translationFields: Object.keys(translateFieldTypes),
+      });
+    }
+    if (typeof pluginParams.translateWholeRecord === 'undefined') {
+      ctx.updatePluginParameters({
+        ...pluginParams,
+        translateWholeRecord: true,
+      });
+    }
+    if (!pluginParams.prompt) {
+      ctx.updatePluginParameters({
+        ...pluginParams,
+        prompt: defaultPrompt,
+      });
+    }
+    if (!pluginParams.modelsToBeExcludedFromThisPlugin) {
+      ctx.updatePluginParameters({
+        ...pluginParams,
+        modelsToBeExcludedFromThisPlugin: [],
+      });
+    }
+    if (!pluginParams.rolesToBeExcludedFromThisPlugin) {
+      ctx.updatePluginParameters({
+        ...pluginParams,
+        rolesToBeExcludedFromThisPlugin: [],
+      });
+    }
+    if (!pluginParams.apiKeysToBeExcludedFromThisPlugin) {
+      ctx.updatePluginParameters({
+        ...pluginParams,
+        apiKeysToBeExcludedFromThisPlugin: [],
+      });
+    }
+    if (!pluginParams.gptModel) {
+      ctx.updatePluginParameters({
+        ...pluginParams,
+        gptModel: 'gpt-4o-mini',
+      });
+    }
+  },
+
   renderConfigScreen(ctx) {
     return render(<ConfigScreen ctx={ctx} />);
   },
@@ -173,7 +225,10 @@ connect({
     const isRoleExcluded =
       pluginParams.rolesToBeExcludedFromThisPlugin.includes(ctx.currentRole.id);
 
-    if (isModelExcluded || isRoleExcluded) {
+    const isFieldExcluded =
+      pluginParams.apiKeysToBeExcludedFromThisPlugin.includes(ctx.field.id);
+
+    if (isModelExcluded || isRoleExcluded || isFieldExcluded) {
       return [];
     }
 

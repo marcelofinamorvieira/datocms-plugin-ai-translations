@@ -38,17 +38,35 @@ export async function translateFieldValue(
     return fieldValue;
   }
 
-  const commonArgs = [fieldValue, pluginParams, toLocale, fromLocale, openai] as const;
+  const commonArgs = [
+    fieldValue,
+    pluginParams,
+    toLocale,
+    fromLocale,
+    openai,
+  ] as const;
 
   switch (fieldType) {
     case 'seo':
-      return translateSeoFieldValue(...commonArgs, fieldTypePrompt, streamCallbacks);
+      return translateSeoFieldValue(
+        ...commonArgs,
+        fieldTypePrompt,
+        streamCallbacks
+      );
     case 'structured_text':
-      return translateStructuredTextValue(...commonArgs, apiToken, streamCallbacks);
+      return translateStructuredTextValue(
+        ...commonArgs,
+        apiToken,
+        streamCallbacks
+      );
     case 'rich_text':
       return translateBlockValue(...commonArgs, apiToken, streamCallbacks);
     default:
-      return translateDefaultFieldValue(...commonArgs, fieldTypePrompt, streamCallbacks);
+      return translateDefaultFieldValue(
+        ...commonArgs,
+        fieldTypePrompt,
+        streamCallbacks
+      );
   }
 }
 
@@ -128,6 +146,10 @@ const TranslateField = async (
   fieldType: string,
   streamCallbacks?: StreamCallbacks
 ) => {
+  if (pluginParams.apiKeysToBeExcludedFromThisPlugin.includes(ctx.field.id)) {
+    return;
+  }
+
   // Break down fieldPath to point to the target locale in a localized field
   const fieldPathArray = ctx.fieldPath.split('.');
   fieldPathArray[fieldPathArray.length - 1] = toLocale;

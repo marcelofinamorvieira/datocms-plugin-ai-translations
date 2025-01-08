@@ -38,6 +38,7 @@ export type ctxParamsType = {
   prompt: string; // The prompt template used by the translation logic
   modelsToBeExcludedFromThisPlugin: string[]; // List of model API keys to exclude from translation
   rolesToBeExcludedFromThisPlugin: string[]; // List of role IDs to exclude from translation
+  apiKeysToBeExcludedFromThisPlugin: string[]; // List of API keys to exclude from translation
 };
 
 /**
@@ -97,6 +98,7 @@ async function fetchAvailableModels(
  * @param prompt - User-defined or default translation prompt
  * @param modelsToBeExcludedFromThisPlugin - List of model API keys to exclude from translation
  * @param rolesToBeExcludedFromThisPlugin - List of role IDs to exclude from translation
+ * @param apiKeysToBeExcludedFromThisPlugin - List of API keys to exclude from translation
  * @param setIsLoading - Toggles the local loading state
  */
 const updatePluginParams = async (
@@ -108,6 +110,7 @@ const updatePluginParams = async (
   prompt: string,
   modelsToBeExcludedFromThisPlugin: string[],
   rolesToBeExcludedFromThisPlugin: string[],
+  apiKeysToBeExcludedFromThisPlugin: string[],
   setIsLoading: React.Dispatch<React.SetStateAction<boolean>>
 ) => {
   setIsLoading(true);
@@ -120,6 +123,7 @@ const updatePluginParams = async (
       prompt,
       modelsToBeExcludedFromThisPlugin,
       rolesToBeExcludedFromThisPlugin,
+      apiKeysToBeExcludedFromThisPlugin,
     });
 
     ctx.notice('Plugin options updated successfully!');
@@ -166,6 +170,11 @@ export default function ConfigScreen({ ctx }: { ctx: RenderConfigScreenCtx }) {
     pluginParams.rolesToBeExcludedFromThisPlugin ?? []
   );
 
+  // Local state for API keys to be excluded from translation
+  const [apiKeysToBeExcluded, setApiKeysToBeExcluded] = useState<string[]>(
+    pluginParams.apiKeysToBeExcludedFromThisPlugin ?? []
+  );
+
   // Local state to allow entire record translation
   const [translateWholeRecord, setTranslateWholeRecord] = useState<boolean>(
     typeof pluginParams.translateWholeRecord === 'boolean'
@@ -184,10 +193,50 @@ export default function ConfigScreen({ ctx }: { ctx: RenderConfigScreenCtx }) {
     'Insert a valid OpenAI API Key',
   ]);
 
+  const [listOfFields, setListOfFields] = useState<
+    {
+      id: string;
+      name: string;
+      model: string;
+    }[]
+  >([]);
+
   /**
    * When the user updates or removes the API key, we refetch the model list.
    * If there's no API key provided, we show a placeholder message.
    */
+
+  useEffect(() => {
+    if (apiKey) {
+      const filteredModels = Object.fromEntries(
+        Object.entries(ctx.itemTypes).filter(
+          ([, value]) => value?.attributes?.modular_block === false
+        )
+      );
+      for (const itemTypeID in filteredModels) {
+        ctx.loadItemTypeFields(itemTypeID).then((fields) => {
+          setListOfFields((prevFields) => {
+            const newFields = fields.map((field) => ({
+              id: field.id,
+              name: field.attributes.label,
+              model:
+                ctx.itemTypes[field.relationships.item_type.data.id]?.attributes
+                  .name ?? '',
+            }));
+            
+            // Create a Set of existing IDs for O(1) lookup
+            const existingIds = new Set(prevFields.map(field => field.id));
+            
+            // Only add fields that don't already exist
+            const uniqueNewFields = newFields.filter(field => !existingIds.has(field.id));
+            
+            return [...prevFields, ...uniqueNewFields];
+          });
+        });
+      }
+    }
+  }, [ctx.itemTypes]);
+
   useEffect(() => {
     if (apiKey) {
       fetchAvailableModels(apiKey, setListOfModels, setGptModel).catch(
@@ -216,7 +265,10 @@ export default function ConfigScreen({ ctx }: { ctx: RenderConfigScreenCtx }) {
         (pluginParams.modelsToBeExcludedFromThisPlugin?.sort().join(',') ??
           '') ||
       rolesToBeExcluded.sort().join(',') !==
-        (pluginParams.rolesToBeExcludedFromThisPlugin?.sort().join(',') ?? '')
+        (pluginParams.rolesToBeExcludedFromThisPlugin?.sort().join(',') ??
+          '') ||
+      apiKeysToBeExcluded.sort().join(',') !==
+        (pluginParams.apiKeysToBeExcludedFromThisPlugin?.sort().join(',') ?? '')
     );
   }, [
     apiKey,
@@ -226,6 +278,7 @@ export default function ConfigScreen({ ctx }: { ctx: RenderConfigScreenCtx }) {
     prompt,
     modelsToBeExcluded,
     rolesToBeExcluded,
+    apiKeysToBeExcluded,
     pluginParams.apiKey,
     pluginParams.gptModel,
     pluginParams.translationFields,
@@ -233,6 +286,7 @@ export default function ConfigScreen({ ctx }: { ctx: RenderConfigScreenCtx }) {
     pluginParams.prompt,
     pluginParams.modelsToBeExcludedFromThisPlugin,
     pluginParams.rolesToBeExcludedFromThisPlugin,
+    pluginParams.apiKeysToBeExcludedFromThisPlugin,
   ]);
 
   const availableModels = useMemo(() => {
@@ -390,6 +444,31 @@ export default function ConfigScreen({ ctx }: { ctx: RenderConfigScreenCtx }) {
           />
         </div>
 
+        <div style={{ marginTop: '16px' }}>
+          <SelectField
+            name="apiKeysToBeExcludedFromTranslation"
+            id="apiKeysToBeExcludedFromTranslation"
+            label="Field API keys to be excluded from using this plugin"
+            value={apiKeysToBeExcluded.map((apiKey) => ({
+              label: `${
+                listOfFields.find((field) => field.id === apiKey)?.name
+              } (${listOfFields.find((field) => field.id === apiKey)?.model})`,
+              value: apiKey,
+            }))}
+            selectInputProps={{
+              isMulti: true,
+              options: listOfFields.map((field) => ({
+                label: `${field.name} (${field.model})`,
+                value: field.id,
+              })),
+            }}
+            onChange={(newValue) => {
+              const selectedApiKeys = newValue.map((v) => v.value);
+              setApiKeysToBeExcluded(selectedApiKeys);
+            }}
+          />
+        </div>
+
         {/* Prompt input section, including a custom hover-based tooltip for placeholders usage */}
         <div className={s.promptContainer}>
           <label
@@ -440,7 +519,8 @@ export default function ConfigScreen({ ctx }: { ctx: RenderConfigScreenCtx }) {
                 translateWholeRecord === true &&
                 prompt === defaultPrompt &&
                 modelsToBeExcluded.length === 0 &&
-                rolesToBeExcluded.length === 0)
+                rolesToBeExcluded.length === 0 &&
+                apiKeysToBeExcluded.length === 0)
             }
             buttonType="muted"
             onClick={() => {
@@ -450,6 +530,7 @@ export default function ConfigScreen({ ctx }: { ctx: RenderConfigScreenCtx }) {
               setPrompt(defaultPrompt);
               setModelsToBeExcluded([]);
               setRolesToBeExcluded([]);
+              setApiKeysToBeExcluded([]);
               ctx.notice(
                 '<h1>Plugin options restored to defaults</h1>\n<p>Save to apply changes</p>'
               );
@@ -471,6 +552,7 @@ export default function ConfigScreen({ ctx }: { ctx: RenderConfigScreenCtx }) {
                 prompt,
                 modelsToBeExcluded,
                 rolesToBeExcluded,
+                apiKeysToBeExcluded,
                 setIsLoading
               )
             }
