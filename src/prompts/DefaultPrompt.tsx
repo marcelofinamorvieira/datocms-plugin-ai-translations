@@ -10,7 +10,6 @@ Never say "Here is the value" just give the value, without anything that is not 
 Never wrap your answer in quotes.
 Never wrap your whole answer in double or single quotes. Do not wrap your whole answer in quotes.
 Do not generate HTML strings unless it is specifically asked for. Do not generate markdown strings unless it is specifically asked for.
-Never return your answer in a codeblock. Just the text in the format requested.
 Translate the following string: 
 
 {fieldValue}

@@ -1,6 +1,7 @@
 export const fieldPrompt = {
   single_line: 'a single line string',
-  markdown: 'markdown',
+  markdown:
+    'markdown.  Do not add the ``markdown before the returned string, just return me a raw markdown string',
   wysiwyg:
     'HTML. Do not add the ``html before the returned string, just return me a raw html string',
   date_picker: 'a String value in ISO 8601 date format (ie. "2015-12-29")',
