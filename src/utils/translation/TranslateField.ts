@@ -72,7 +72,13 @@ export async function translateFieldValue(
         streamCallbacks
       );
     case 'rich_text':
-      return translateBlockValue(...commonArgs, apiToken, streamCallbacks);
+    case 'framed_single_block':
+      return translateBlockValue(
+        ...commonArgs,
+        apiToken,
+        fieldType,
+        streamCallbacks
+      );
     default:
       return translateDefaultFieldValue(
         ...commonArgs,
@@ -92,10 +98,14 @@ export async function translateBlockValue(
   fromLocale: string,
   openai: OpenAI,
   apiToken: string,
+  fieldType: string,
   streamCallbacks?: StreamCallbacks
 ) {
+  const isFramedSingleBlock = fieldType === 'framed_single_block';
   // Clean block array from any leftover item IDs
-  const cleanedFieldValue = deleteItemIdKeys(fieldValue);
+  const cleanedFieldValue = deleteItemIdKeys(
+    !isFramedSingleBlock ? fieldValue : [fieldValue]
+  );
 
   const client = buildClient({ apiToken });
 
@@ -142,7 +152,7 @@ export async function translateBlockValue(
     }
   }
 
-  return cleanedFieldValue;
+  return isFramedSingleBlock ? cleanedFieldValue[0] : cleanedFieldValue;
 }
 
 /**
