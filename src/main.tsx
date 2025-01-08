@@ -20,6 +20,7 @@ import {
 import 'datocms-react-ui/styles.css';
 import ConfigScreen, {
   ctxParamsType,
+  modularContentVariations,
   translateFieldTypes,
 } from './entrypoints/Config/ConfigScreen';
 import { render } from './utils/render';
@@ -228,7 +229,23 @@ connect({
     const isFieldExcluded =
       pluginParams.apiKeysToBeExcludedFromThisPlugin.includes(ctx.field.id);
 
-    if (isModelExcluded || isRoleExcluded || isFieldExcluded) {
+    let isFieldTranslatable = pluginParams.translationFields.includes(
+      ctx.field.attributes.appearance.editor
+    );
+
+    if (
+      pluginParams.translationFields.includes('rich_text') &&
+      modularContentVariations.includes(ctx.field.attributes.appearance.editor)
+    ) {
+      isFieldTranslatable = true;
+    }
+
+    if (
+      isModelExcluded ||
+      isRoleExcluded ||
+      isFieldExcluded ||
+      !isFieldTranslatable
+    ) {
       return [];
     }
 
@@ -293,12 +310,7 @@ connect({
     const availableLocales = ctx.formValues.internalLocales as string[];
 
     // "Translate to" actions
-    if (
-      isLocalized &&
-      hasOtherLocales &&
-      hasFieldValueInThisLocale &&
-      pluginParams.translationFields.includes(fieldType)
-    ) {
+    if (isLocalized && hasOtherLocales && hasFieldValueInThisLocale) {
       actionsArray.push({
         label: 'Translate to',
         icon: menuOpenAIIconObject,
@@ -320,11 +332,7 @@ connect({
     }
 
     // "Translate from" actions
-    if (
-      isLocalized &&
-      hasOtherLocales &&
-      pluginParams.translationFields.includes(fieldType)
-    ) {
+    if (isLocalized && hasOtherLocales) {
       actionsArray.push({
         label: 'Translate from',
         icon: menuOpenAIIconObject,

@@ -57,6 +57,8 @@ export const translateFieldTypes = {
   rich_text: 'Modular Content',
 };
 
+export const modularContentVariations = ['framed_single_block'];
+
 /**
  * Fetches the list of available models from OpenAI using the provided API key.
  * It sets the list of model IDs or an error message in the local component state.
@@ -223,13 +225,15 @@ export default function ConfigScreen({ ctx }: { ctx: RenderConfigScreenCtx }) {
                 ctx.itemTypes[field.relationships.item_type.data.id]?.attributes
                   .name ?? '',
             }));
-            
+
             // Create a Set of existing IDs for O(1) lookup
-            const existingIds = new Set(prevFields.map(field => field.id));
-            
+            const existingIds = new Set(prevFields.map((field) => field.id));
+
             // Only add fields that don't already exist
-            const uniqueNewFields = newFields.filter(field => !existingIds.has(field.id));
-            
+            const uniqueNewFields = newFields.filter(
+              (field) => !existingIds.has(field.id)
+            );
+
             return [...prevFields, ...uniqueNewFields];
           });
         });

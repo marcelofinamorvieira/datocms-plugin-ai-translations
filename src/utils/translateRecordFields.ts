@@ -1,6 +1,9 @@
 import { RenderItemFormSidebarPanelCtx } from 'datocms-plugin-sdk';
 import OpenAI from 'openai';
-import { ctxParamsType } from '../entrypoints/Config/ConfigScreen';
+import {
+  ctxParamsType,
+  modularContentVariations,
+} from '../entrypoints/Config/ConfigScreen';
 import { fieldPrompt } from '../prompts/FieldPrompts';
 import { translateFieldValue } from './translation/TranslateField';
 
@@ -69,8 +72,18 @@ export async function translateRecordFields(
     const fieldValue = currentFormValues[field!.attributes.api_key];
 
     // If field is not localized or doesn't have a value in the source locale, skip
+    let isFieldTranslatable =
+      pluginParams.translationFields.includes(fieldType);
+
     if (
-      !pluginParams.translationFields.includes(fieldType) ||
+      pluginParams.translationFields.includes('rich_text') &&
+      modularContentVariations.includes(fieldType)
+    ) {
+      isFieldTranslatable = true;
+    }
+
+    if (
+      !isFieldTranslatable ||
       !field!.attributes.localized ||
       pluginParams.apiKeysToBeExcludedFromThisPlugin.includes(field!.id)
     )

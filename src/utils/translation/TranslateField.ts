@@ -6,7 +6,10 @@
 import OpenAI from 'openai';
 import { buildClient } from '@datocms/cma-client-browser';
 import { ExecuteFieldDropdownActionCtx } from 'datocms-plugin-sdk';
-import { ctxParamsType } from '../../entrypoints/Config/ConfigScreen';
+import {
+  ctxParamsType,
+  modularContentVariations,
+} from '../../entrypoints/Config/ConfigScreen';
 import { fieldPrompt } from '../../prompts/FieldPrompts';
 import { translateDefaultFieldValue } from './DefaultTranslation';
 import { translateSeoFieldValue } from './SeoTranslation';
@@ -34,7 +37,16 @@ export async function translateFieldValue(
   streamCallbacks?: StreamCallbacks
 ): Promise<unknown> {
   // If this field type is not in the plugin config or has no value, return as is
-  if (!pluginParams.translationFields.includes(fieldType) || !fieldValue) {
+  let isFieldTranslatable = pluginParams.translationFields.includes(fieldType);
+
+  if (
+    pluginParams.translationFields.includes('rich_text') &&
+    modularContentVariations.includes(fieldType)
+  ) {
+    isFieldTranslatable = true;
+  }
+
+  if (!isFieldTranslatable || !fieldValue) {
     return fieldValue;
   }
 
