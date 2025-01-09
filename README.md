@@ -2,6 +2,11 @@
 
 This plugin integrates with the OpenAI API and provides on-demand AI-powered translations for your fields. You can also optionally translate entire records.
 
+![47659](https://github.com/user-attachments/assets/2aae06c5-d2fb-404d-ae76-08b5ebd55759)
+
+![31841](https://github.com/user-attachments/assets/a1b4e9aa-d79e-4807-8b90-16b06b65852c)
+
+
 ## Configuration
 
 On the plugin’s Settings screen:
