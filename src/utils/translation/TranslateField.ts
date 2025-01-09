@@ -14,6 +14,7 @@ import { fieldPrompt } from '../../prompts/FieldPrompts';
 import { translateDefaultFieldValue } from './DefaultTranslation';
 import { translateSeoFieldValue } from './SeoTranslation';
 import { translateStructuredTextValue } from './StructuredTextTranslation';
+import { translateFileFieldValue } from './FileFieldTranslation';
 import { deleteItemIdKeys } from './utils';
 
 type StreamCallbacks = {
@@ -40,8 +41,9 @@ export async function translateFieldValue(
   let isFieldTranslatable = pluginParams.translationFields.includes(fieldType);
 
   if (
-    pluginParams.translationFields.includes('rich_text') &&
-    modularContentVariations.includes(fieldType)
+    (pluginParams.translationFields.includes('rich_text') &&
+      modularContentVariations.includes(fieldType)) ||
+    (pluginParams.translationFields.includes('file') && fieldType === 'gallery')
   ) {
     isFieldTranslatable = true;
   }
@@ -79,6 +81,9 @@ export async function translateFieldValue(
         fieldType,
         streamCallbacks
       );
+    case 'file':
+    case 'gallery':
+      return translateFileFieldValue(...commonArgs, fieldType, streamCallbacks);
     default:
       return translateDefaultFieldValue(
         ...commonArgs,

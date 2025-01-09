@@ -76,8 +76,10 @@ export async function translateRecordFields(
       pluginParams.translationFields.includes(fieldType);
 
     if (
-      pluginParams.translationFields.includes('rich_text') &&
-      modularContentVariations.includes(fieldType)
+      (pluginParams.translationFields.includes('rich_text') &&
+        modularContentVariations.includes(fieldType)) ||
+      (pluginParams.translationFields.includes('file') &&
+        fieldType === 'gallery')
     ) {
       isFieldTranslatable = true;
     }

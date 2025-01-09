@@ -55,6 +55,7 @@ export const translateFieldTypes = {
   seo: 'SEO',
   structured_text: 'Structured Text',
   rich_text: 'Modular Content',
+  file: 'Media Fields',
 };
 
 export const modularContentVariations = ['framed_single_block'];

@@ -234,8 +234,12 @@ connect({
     );
 
     if (
-      pluginParams.translationFields.includes('rich_text') &&
-      modularContentVariations.includes(ctx.field.attributes.appearance.editor)
+      (pluginParams.translationFields.includes('rich_text') &&
+        modularContentVariations.includes(
+          ctx.field.attributes.appearance.editor
+        )) ||
+      (pluginParams.translationFields.includes('file') &&
+        ctx.field.attributes.appearance.editor === 'gallery')
     ) {
       isFieldTranslatable = true;
     }
