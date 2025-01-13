@@ -210,7 +210,7 @@ export function ChatBubble({ bubble, theme }: Props) {
         </motion.div>
 
         <div className={styles.streamingContainer}>
-          {bubble.status === 'pending' && bubble.streamingContent && (
+          {bubble.status === 'pending' && bubble.streamingContent && bubble.streamingContent.trim().length > 250 && (
             <div
               className={styles.hierarchyLine}
               style={{ backgroundColor: `${tooltipTextColor}20` }}
@@ -218,7 +218,7 @@ export function ChatBubble({ bubble, theme }: Props) {
           )}
 
           <AnimatePresence mode="wait">
-            {bubble.status === 'pending' && bubble.streamingContent && (
+            {bubble.status === 'pending' && bubble.streamingContent && bubble.streamingContent.trim().length > 250 && (
               <motion.div
                 variants={tooltipVariants}
                 initial="initial"

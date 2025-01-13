@@ -204,6 +204,25 @@ export default function ConfigScreen({ ctx }: { ctx: RenderConfigScreenCtx }) {
     }[]
   >([]);
 
+  // Add state for exclusion rules visibility
+  const [showExclusionRules, setShowExclusionRules] = useState<boolean>(false);
+
+  // Calculate if any exclusion rules are set
+  const hasExclusionRules = useMemo(() => {
+    return (
+      modelsToBeExcluded.length > 0 ||
+      rolesToBeExcluded.length > 0 ||
+      apiKeysToBeExcluded.length > 0
+    );
+  }, [modelsToBeExcluded, rolesToBeExcluded, apiKeysToBeExcluded]);
+
+  useEffect(() => {
+    // Force show exclusion rules if any are set
+    if (hasExclusionRules) {
+      setShowExclusionRules(true);
+    }
+  }, [hasExclusionRules]);
+
   /**
    * When the user updates or removes the API key, we refetch the model list.
    * If there's no API key provided, we show a placeholder message.
@@ -396,83 +415,125 @@ export default function ConfigScreen({ ctx }: { ctx: RenderConfigScreenCtx }) {
             setTranslationFields(selectedFields);
           }}
         />
-
-        <div style={{ marginTop: '16px' }}>
-          <SelectField
-            name="modelsToBeExcludedFromTranslation"
-            id="modelsToBeExcludedFromTranslation"
-            label="Models to be excluded from this plugin"
-            value={modelsToBeExcluded.map((modelKey) => {
-              const model = availableModels.find((m) => m.apiKey === modelKey);
-              return {
-                label: model?.name ?? modelKey,
-                value: modelKey,
-              };
-            })}
-            selectInputProps={{
-              isMulti: true,
-              options: availableModels.map((model) => ({
-                label: model.name ?? '',
-                value: model.apiKey ?? '',
-              })),
-            }}
-            onChange={(newValue) => {
-              const selectedModels = newValue.map((v) => v.value);
-              setModelsToBeExcluded(selectedModels);
-            }}
+        {/* A switch field to allow translation of the entire record from the sidebar */}
+        <div className={s.switchField}>
+          <SwitchField
+            name="translateWholeRecord"
+            id="translateWholeRecord"
+            label="Allow translation of the whole record from the sidebar"
+            value={translateWholeRecord}
+            onChange={(newValue) => setTranslateWholeRecord(newValue)}
           />
         </div>
 
-        <div style={{ marginTop: '16px' }}>
-          <SelectField
-            name="rolesToBeExcludedFromTranslation"
-            id="rolesToBeExcludedFromTranslation"
-            label="Roles to be excluded from using this plugin"
-            value={rolesToBeExcluded.map((roleId) => {
-              const role = roles.find((r) => r.id === roleId);
-              return {
-                label: role?.name ?? roleId,
-                value: roleId,
-              };
-            })}
-            selectInputProps={{
-              isMulti: true,
-              options: roles.map((role) => ({
-                label: role.name ?? '',
-                value: role.id ?? '',
-              })),
-            }}
-            onChange={(newValue) => {
-              const selectedRoles = newValue.map((v) => v.value);
-              setRolesToBeExcluded(selectedRoles);
-            }}
+        {/* Switch field to toggle exclusion rules visibility */}
+        <div
+          className={s.switchField}
+          style={{ display: 'flex', alignItems: 'center' }}
+        >
+          <SwitchField
+            name="showExclusionRules"
+            id="showExclusionRules"
+            label="Show exclusion rules"
+            value={showExclusionRules}
+            onChange={(newValue) => setShowExclusionRules(newValue)}
           />
+          {hasExclusionRules && (
+            <div className={s.warningTooltip}>
+              &#9432;
+              <div className={s.tooltipText}>
+                There are exclusion rules present. If the plugin is not being
+                displayed in a model or field where you expect it, please review
+                them.
+              </div>
+            </div>
+          )}
         </div>
 
-        <div style={{ marginTop: '16px' }}>
-          <SelectField
-            name="apiKeysToBeExcludedFromTranslation"
-            id="apiKeysToBeExcludedFromTranslation"
-            label="Field API keys to be excluded from using this plugin"
-            value={apiKeysToBeExcluded.map((apiKey) => ({
-              label: `${
-                listOfFields.find((field) => field.id === apiKey)?.name
-              } (${listOfFields.find((field) => field.id === apiKey)?.model})`,
-              value: apiKey,
-            }))}
-            selectInputProps={{
-              isMulti: true,
-              options: listOfFields.map((field) => ({
-                label: `${field.name} (${field.model})`,
-                value: field.id,
-              })),
-            }}
-            onChange={(newValue) => {
-              const selectedApiKeys = newValue.map((v) => v.value);
-              setApiKeysToBeExcluded(selectedApiKeys);
-            }}
-          />
-        </div>
+        {showExclusionRules && (
+          <div className={s.exclusionRules}>
+            <div style={{ marginTop: '16px' }}>
+              <SelectField
+                name="modelsToBeExcludedFromTranslation"
+                id="modelsToBeExcludedFromTranslation"
+                label="Models to be excluded from this plugin"
+                value={modelsToBeExcluded.map((modelKey) => {
+                  const model = availableModels.find(
+                    (m) => m.apiKey === modelKey
+                  );
+                  return {
+                    label: model?.name ?? modelKey,
+                    value: modelKey,
+                  };
+                })}
+                selectInputProps={{
+                  isMulti: true,
+                  options: availableModels.map((model) => ({
+                    label: model.name ?? '',
+                    value: model.apiKey ?? '',
+                  })),
+                }}
+                onChange={(newValue) => {
+                  const selectedModels = newValue.map((v) => v.value);
+                  setModelsToBeExcluded(selectedModels);
+                }}
+              />
+            </div>
+
+            <div style={{ marginTop: '16px' }}>
+              <SelectField
+                name="rolesToBeExcludedFromTranslation"
+                id="rolesToBeExcludedFromTranslation"
+                label="Roles to be excluded from using this plugin"
+                value={rolesToBeExcluded.map((roleId) => {
+                  const role = roles.find((r) => r.id === roleId);
+                  return {
+                    label: role?.name ?? roleId,
+                    value: roleId,
+                  };
+                })}
+                selectInputProps={{
+                  isMulti: true,
+                  options: roles.map((role) => ({
+                    label: role.name ?? '',
+                    value: role.id ?? '',
+                  })),
+                }}
+                onChange={(newValue) => {
+                  const selectedRoles = newValue.map((v) => v.value);
+                  setRolesToBeExcluded(selectedRoles);
+                }}
+              />
+            </div>
+
+            <div style={{ marginTop: '16px' }}>
+              <SelectField
+                name="apiKeysToBeExcludedFromTranslation"
+                id="apiKeysToBeExcludedFromTranslation"
+                label="Field API keys to be excluded from using this plugin"
+                value={apiKeysToBeExcluded.map((apiKey) => ({
+                  label: `${
+                    listOfFields.find((field) => field.id === apiKey)?.name
+                  } (${
+                    listOfFields.find((field) => field.id === apiKey)?.model
+                  })`,
+                  value: apiKey,
+                }))}
+                selectInputProps={{
+                  isMulti: true,
+                  options: listOfFields.map((field) => ({
+                    label: `${field.name} (${field.model})`,
+                    value: field.id,
+                  })),
+                }}
+                onChange={(newValue) => {
+                  const selectedApiKeys = newValue.map((v) => v.value);
+                  setApiKeysToBeExcluded(selectedApiKeys);
+                }}
+              />
+            </div>
+          </div>
+        )}
 
         {/* Prompt input section, including a custom hover-based tooltip for placeholders usage */}
         <div className={s.promptContainer}>
@@ -499,17 +560,6 @@ export default function ConfigScreen({ ctx }: { ctx: RenderConfigScreenCtx }) {
             placeholder="Enter your prompt here"
             value={prompt}
             onChange={(e) => setPrompt(e.target.value)}
-          />
-        </div>
-
-        {/* A switch field to allow translation of the entire record from the sidebar */}
-        <div className={s.switchField}>
-          <SwitchField
-            name="translateWholeRecord"
-            id="translateWholeRecord"
-            label="Allow translation of the whole record from the sidebar"
-            value={translateWholeRecord}
-            onChange={(newValue) => setTranslateWholeRecord(newValue)}
           />
         </div>
 

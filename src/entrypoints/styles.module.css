@@ -132,6 +132,12 @@
   margin-top: 16px;
 }
 
+.exclusionRules {
+  border-left: 2px solid #e6f7ff;
+  padding-left: 16px;
+  margin-left: 4px;
+}
+
 .promptContainer {
   margin-top: 16px;
   display: flex;
@@ -145,6 +151,11 @@
   display: inline-block;
   cursor: help;
   margin-left: 8px;
+}
+
+.warningTooltip {
+  composes: tooltipContainer;
+  color: #faad14;
 }
 
 /* Hidden by default; becomes visible on .tooltipContainer:hover */
