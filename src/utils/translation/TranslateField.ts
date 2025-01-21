@@ -35,10 +35,15 @@ export async function translateFieldValue(
   openai: OpenAI,
   fieldTypePrompt: string,
   apiToken: string,
+  fieldId: string,
   streamCallbacks?: StreamCallbacks
 ): Promise<unknown> {
   // If this field type is not in the plugin config or has no value, return as is
   let isFieldTranslatable = pluginParams.translationFields.includes(fieldType);
+
+  if (pluginParams.apiKeysToBeExcludedFromThisPlugin.includes(fieldId)) {
+    return fieldValue;
+  }
 
   if (
     (pluginParams.translationFields.includes('rich_text') &&
@@ -122,9 +127,12 @@ export async function translateBlockValue(
     // Fetch fields for this specific block
     const fields = await client.fields.list(blockModelId);
     const fieldTypeDictionary = fields.reduce((acc, field) => {
-      acc[field.api_key] = field.appearance.editor;
+      acc[field.api_key] = {
+        editor: field.appearance.editor,
+        id: field.id,
+      };
       return acc;
-    }, {} as Record<string, string>);
+    }, {} as Record<string, { editor: string; id: string }>);
 
     // Translate each field within the block
     for (const field in block) {
@@ -140,7 +148,7 @@ export async function translateBlockValue(
 
       let nestedPrompt = ' Return the response in the format of ';
       nestedPrompt +=
-        fieldPrompt[fieldTypeDictionary[field] as keyof typeof fieldPrompt] ||
+        fieldPrompt[fieldTypeDictionary[field]?.editor as keyof typeof fieldPrompt] ||
         '';
 
       block[field] = await translateFieldValue(
@@ -148,10 +156,11 @@ export async function translateBlockValue(
         pluginParams,
         toLocale,
         fromLocale,
-        fieldTypeDictionary[field],
+        fieldTypeDictionary[field]?.editor || '',
         openai,
         nestedPrompt,
         apiToken,
+        fieldTypeDictionary[field]?.id || '',
         streamCallbacks
       );
     }
@@ -207,6 +216,7 @@ const TranslateField = async (
     newOpenai,
     fieldTypePrompt,
     ctx.currentUserAccessToken!,
+    ctx.field.id,
     streamCallbacks
   );
 

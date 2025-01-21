@@ -1,5 +1,5 @@
 export const fieldPrompt = {
-  single_line: 'a single line string',
+  single_line: 'a single line string. Do not wrap the string in quotes',
   markdown:
     'markdown.  Do not add the ``markdown before the returned string, just return me a raw markdown string',
   wysiwyg:

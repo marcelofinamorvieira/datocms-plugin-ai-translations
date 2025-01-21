@@ -230,20 +230,18 @@ export default function ConfigScreen({ ctx }: { ctx: RenderConfigScreenCtx }) {
 
   useEffect(() => {
     if (apiKey) {
-      const filteredModels = Object.fromEntries(
-        Object.entries(ctx.itemTypes).filter(
-          ([, value]) => value?.attributes?.modular_block === false
-        )
-      );
-      for (const itemTypeID in filteredModels) {
+      // Process all item types, including modular blocks
+      for (const itemTypeID in ctx.itemTypes) {
         ctx.loadItemTypeFields(itemTypeID).then((fields) => {
           setListOfFields((prevFields) => {
+            const itemType = ctx.itemTypes[itemTypeID];
+            const isBlock = itemType?.attributes.modular_block;
+            const modelName = itemType?.attributes.name;
+
             const newFields = fields.map((field) => ({
               id: field.id,
               name: field.attributes.label,
-              model:
-                ctx.itemTypes[field.relationships.item_type.data.id]?.attributes
-                  .name ?? '',
+              model: isBlock ? `${modelName} block` : modelName ?? '',
             }));
 
             // Create a Set of existing IDs for O(1) lookup
