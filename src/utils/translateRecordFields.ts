@@ -156,6 +156,7 @@ export async function translateRecordFields(
         openai,
         fieldTypePrompt,
         ctx.currentUserAccessToken!,
+        field!.id,
         streamCallbacks
       );
 

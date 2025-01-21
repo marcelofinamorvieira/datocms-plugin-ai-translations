@@ -115,6 +115,7 @@ export async function translateStructuredTextValue(
         openai,
         '',
         apiToken,
+        '',
         streamCallbacks
       );
       for (const node of translatedBlockNodes as any[]) {
