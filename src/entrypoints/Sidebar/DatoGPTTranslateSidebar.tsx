@@ -26,6 +26,7 @@ const localeSelect = locale.getByTag;
  * - selectedLocale: The source locale for translation (default: the first locale in internalLocales).
  * - selectedLocales: The target locales to translate into (all locales except the source by default).
  * - isLoading: Boolean indicating if the translation is currently in progress.
+ * - isCancelling: Boolean indicating if the user has requested to cancel the translation.
  * - translationBubbles: An array of objects representing the translation bubbles on the UI.
  *   Each bubble has { fieldLabel: string, locale: string, status: 'pending'|'done' }.
  *
@@ -61,6 +62,9 @@ export default function DatoGPTTranslateSidebar({ ctx }: PropTypes) {
   // isLoading tracks if translation is in progress
   const [isLoading, setIsLoading] = useState<boolean>(false);
 
+  // Tracks if user has requested to cancel the translation
+  const [isCancelling, setIsCancelling] = useState<boolean>(false);
+
   // translationBubbles stores the chat-like bubble info.
   // Each bubble: { fieldLabel: string, locale: string, status: 'pending'|'done' }
   const [translationBubbles, setTranslationBubbles] = useState<
@@ -77,6 +81,9 @@ export default function DatoGPTTranslateSidebar({ ctx }: PropTypes) {
   const [showTimer, setShowTimer] = useState<boolean>(false);
   const [progress, setProgress] = useState<number>(100);
   const TIMER_DURATION = 7500; // 7.5 seconds in milliseconds
+
+  // Reference to the AbortController for cancelling API requests
+  const [abortController, setAbortController] = useState<AbortController | null>(null);
 
   // Timer effect
   useEffect(() => {
@@ -140,6 +147,11 @@ export default function DatoGPTTranslateSidebar({ ctx }: PropTypes) {
   async function handleTranslateAllFields() {
     setIsLoading(true);
     setTranslationBubbles([]);
+    setIsCancelling(false);
+    
+    // Create a new AbortController for this translation session
+    const controller = new AbortController();
+    setAbortController(controller);
 
     try {
       await translateRecordFields(
@@ -172,17 +184,49 @@ export default function DatoGPTTranslateSidebar({ ctx }: PropTypes) {
               )
             );
           },
+          checkCancellation: () => isCancelling,
+          abortSignal: controller.signal
         }
       );
 
-      ctx.notice('All fields translated successfully');
-      setShowTimer(true);
-      setProgress(100);
+      if (!isCancelling) {
+        ctx.notice('All fields translated successfully');
+        setShowTimer(true);
+        setProgress(100);
+      } else {
+        ctx.notice('Translation cancelled');
+        setIsCancelling(false);
+        setIsLoading(false);
+      }
     } catch (error) {
-      ctx.alert(
-        (error as Error).message || 'An unknown error occurred during translation'
-      );
+      if ((error as Error).name === 'AbortError') {
+        ctx.notice('Translation was cancelled');
+      } else {
+        ctx.alert(
+          (error as Error).message || 'An unknown error occurred during translation'
+        );
+      }
       setIsLoading(false);
+      setIsCancelling(false);
+    } finally {
+      setAbortController(null);
+    }
+  }
+
+  /**
+   * handleCancelTranslation
+   * 
+   * Called when "Cancel" is clicked during translation.
+   * Sets the cancellation flag and shows a notification.
+   * Aborts the current API request if one is in progress.
+   */
+  function handleCancelTranslation() {
+    setIsCancelling(true);
+    ctx.notice('Translation cancellation requested. Please wait...');
+    
+    // Abort the API request
+    if (abortController) {
+      abortController.abort();
     }
   }
 
@@ -416,6 +460,18 @@ export default function DatoGPTTranslateSidebar({ ctx }: PropTypes) {
                     </Button>
                   </div>
                 </div>
+              )}
+              {isLoading && !showTimer && (
+                <Button
+                  buttonSize="xs"
+                  fullWidth
+                  buttonType="muted"
+                  onClick={handleCancelTranslation}
+                  disabled={isCancelling}
+                  style={{ marginTop: '16px' }}
+                >
+                  {isCancelling ? 'Cancelling...' : 'Cancel'}
+                </Button>
               )}
             </div>
           </motion.div>

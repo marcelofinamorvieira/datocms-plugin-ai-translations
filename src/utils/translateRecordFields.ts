@@ -5,7 +5,7 @@ import {
   modularContentVariations,
 } from '../entrypoints/Config/ConfigScreen';
 import { fieldPrompt } from '../prompts/FieldPrompts';
-import { translateFieldValue } from './translation/TranslateField';
+import { translateFieldValue, generateRecordContext } from './translation/TranslateField';
 
 /**
  * translateRecordFields.ts
@@ -39,6 +39,8 @@ type TranslateOptions = {
   onStart?: (fieldLabel: string, locale: string, fieldPath: string) => void;
   onComplete?: (fieldLabel: string, locale: string) => void;
   onStream?: (fieldLabel: string, locale: string, content: string) => void;
+  checkCancellation?: () => boolean;
+  abortSignal?: AbortSignal;
 };
 
 interface LocalizedField {
@@ -70,6 +72,11 @@ export async function translateRecordFields(
   for (const field of fieldsArray) {
     if (!field || !field.attributes) {
       continue; // Skip if field is undefined or doesn't have attributes
+    }
+    
+    // Check for cancellation before starting a new field
+    if (options.checkCancellation?.()) {
+      return; // Exit the function if cancellation was requested
     }
     
     const fieldType = field.attributes.appearance.editor;
@@ -121,6 +128,11 @@ export async function translateRecordFields(
 
     // For each target locale, translate the field
     for (const locale of targetLocales) {
+      // Check for cancellation before starting a new locale
+      if (options.checkCancellation?.()) {
+        return; // Exit the function if cancellation was requested
+      }
+      
       // Inform the sidebar that translation for this field-locale is starting
       options.onStart?.(
         fieldLabel,
@@ -148,7 +160,12 @@ export async function translateRecordFields(
         onComplete: () => {
           options.onComplete?.(fieldLabel, locale);
         },
+        checkCancellation: options.checkCancellation,
+        abortSignal: options.abortSignal
       };
+
+      // Generate record context
+      const recordContext = generateRecordContext(ctx.formValues, sourceLocale);
 
       // Translate the field value with streaming support
       const translatedFieldValue = await translateFieldValue(
@@ -161,7 +178,8 @@ export async function translateRecordFields(
         fieldTypePrompt,
         ctx.currentUserAccessToken as string,
         field.id,
-        streamCallbacks
+        streamCallbacks,
+        recordContext
       );
 
       // Update form values with the translated field

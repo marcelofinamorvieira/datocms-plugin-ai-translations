@@ -39,6 +39,7 @@ export type ctxParamsType = {
   modelsToBeExcludedFromThisPlugin: string[]; // List of model API keys to exclude from translation
   rolesToBeExcludedFromThisPlugin: string[]; // List of role IDs to exclude from translation
   apiKeysToBeExcludedFromThisPlugin: string[]; // List of API keys to exclude from translation
+  enableDebugging: boolean; // Whether to enable detailed console logging for debugging
 };
 
 /**
@@ -114,7 +115,8 @@ const updatePluginParams = async (
   modelsToBeExcludedFromThisPlugin: string[],
   rolesToBeExcludedFromThisPlugin: string[],
   apiKeysToBeExcludedFromThisPlugin: string[],
-  setIsLoading: React.Dispatch<React.SetStateAction<boolean>>
+  setIsLoading: React.Dispatch<React.SetStateAction<boolean>>,
+  enableDebugging: boolean
 ) => {
   setIsLoading(true);
   try {
@@ -127,6 +129,7 @@ const updatePluginParams = async (
       modelsToBeExcludedFromThisPlugin,
       rolesToBeExcludedFromThisPlugin,
       apiKeysToBeExcludedFromThisPlugin,
+      enableDebugging,
     });
 
     ctx.notice('Plugin options updated successfully!');
@@ -187,6 +190,13 @@ export default function ConfigScreen({ ctx }: { ctx: RenderConfigScreenCtx }) {
 
   // Local state for the translation prompt (includes placeholders like {fieldValue})
   const [prompt, setPrompt] = useState(pluginParams.prompt ?? defaultPrompt);
+
+  // Local state for debugging
+  const [enableDebugging, setEnableDebugging] = useState<boolean>(
+    typeof pluginParams.enableDebugging === 'boolean'
+      ? pluginParams.enableDebugging
+      : false
+  );
 
   // A loading state to indicate asynchronous operations (like saving or model fetching)
   const [isLoading, setIsLoading] = useState(false);
@@ -290,7 +300,8 @@ export default function ConfigScreen({ ctx }: { ctx: RenderConfigScreenCtx }) {
         (pluginParams.rolesToBeExcludedFromThisPlugin?.sort().join(',') ??
           '') ||
       apiKeysToBeExcluded.sort().join(',') !==
-        (pluginParams.apiKeysToBeExcludedFromThisPlugin?.sort().join(',') ?? '')
+        (pluginParams.apiKeysToBeExcludedFromThisPlugin?.sort().join(',') ?? '') ||
+      enableDebugging !== (pluginParams.enableDebugging ?? false)
     );
   }, [
     apiKey,
@@ -301,6 +312,7 @@ export default function ConfigScreen({ ctx }: { ctx: RenderConfigScreenCtx }) {
     modelsToBeExcluded,
     rolesToBeExcluded,
     apiKeysToBeExcluded,
+    enableDebugging,
     pluginParams.apiKey,
     pluginParams.gptModel,
     pluginParams.translationFields,
@@ -309,6 +321,7 @@ export default function ConfigScreen({ ctx }: { ctx: RenderConfigScreenCtx }) {
     pluginParams.modelsToBeExcludedFromThisPlugin,
     pluginParams.rolesToBeExcludedFromThisPlugin,
     pluginParams.apiKeysToBeExcludedFromThisPlugin,
+    pluginParams.enableDebugging,
   ]);
 
   const availableModels = useMemo(() => {
@@ -423,6 +436,27 @@ export default function ConfigScreen({ ctx }: { ctx: RenderConfigScreenCtx }) {
             value={translateWholeRecord}
             onChange={(newValue) => setTranslateWholeRecord(newValue)}
           />
+        </div>
+
+        {/* A switch field to enable debug logging */}
+        <div className={s.switchField}>
+          <div style={{ display: 'flex', alignItems: 'center' }}>
+            <SwitchField
+              name="enableDebugging"
+              id="enableDebugging"
+              label="Enable debug logging"
+              value={enableDebugging}
+              onChange={(newValue) => setEnableDebugging(newValue)}
+            />
+            {/* Tooltip container styled like the translation prompt tooltip */}
+            <div className={s.tooltipContainer}>
+              &#9432;
+              <div className={s.tooltipText}>
+                When enabled, detailed logs of translation requests and responses will be displayed in the browser console.
+                This helps with troubleshooting and understanding how the plugin processes content.
+              </div>
+            </div>
+          </div>
         </div>
 
         {/* Switch field to toggle exclusion rules visibility */}
@@ -610,7 +644,8 @@ export default function ConfigScreen({ ctx }: { ctx: RenderConfigScreenCtx }) {
                 modelsToBeExcluded,
                 rolesToBeExcluded,
                 apiKeysToBeExcluded,
-                setIsLoading
+                setIsLoading,
+                enableDebugging
               )
             }
           >

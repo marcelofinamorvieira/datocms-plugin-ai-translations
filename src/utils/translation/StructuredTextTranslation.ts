@@ -4,31 +4,34 @@
 // extracting text nodes, translating block nodes, and reassembling.
 
 import type OpenAI from 'openai';
-import locale from 'locale-codes';
 import type { ctxParamsType } from '../../entrypoints/Config/ConfigScreen';
 import { translateFieldValue } from './TranslateField';
+import { createLogger } from '../logging/Logger';
 import {
   extractTextValues,
-  insertObjectAtIndex,
   reconstructObject,
+  insertObjectAtIndex,
+  removeIds
 } from './utils';
-import { removeIds } from './utils';
 
 type StreamCallbacks = {
   onStream?: (chunk: string) => void;
   onComplete?: () => void;
+  checkCancellation?: () => boolean;
+  abortSignal?: AbortSignal;
 };
 
+// Define structured text node types for better type safety
+interface StructuredTextNode {
+  type?: string;
+  value?: string;
+  item?: string;
+  originalIndex?: number;
+  [key: string]: unknown;
+}
+
 /**
- * Translates a structured text field, also handling block nodes that can contain nested fields.
- * @param fieldValue - the structured text data array.
- * @param pluginParams - plugin parameters for the model configuration.
- * @param toLocale - target locale code.
- * @param fromLocale - source locale code.
- * @param openai - instance of the OpenAI client.
- * @param apiToken - DatoCMS user access token for fetching block structures.
- * @param streamCallbacks - optional stream callbacks for handling translation progress.
- * @returns updated structured text data with all strings translated.
+ * Translates a structured text field value
  */
 export async function translateStructuredTextValue(
   fieldValue: unknown,
@@ -37,23 +40,25 @@ export async function translateStructuredTextValue(
   fromLocale: string,
   openai: OpenAI,
   apiToken: string,
-  streamCallbacks?: StreamCallbacks
+  streamCallbacks?: StreamCallbacks,
+  recordContext = ''
 ): Promise<unknown> {
-  const noIdFieldValue = removeIds(fieldValue);
+  // Create logger
+  const logger = createLogger(pluginParams, 'StructuredTextTranslation');
 
-  // Define specific types for structured text nodes
-  type StructuredTextNode = {
-    type?: string;
-    [key: string]: unknown;
-  };
+  // Skip translation if null or not an array
+  if (!fieldValue || !Array.isArray(fieldValue)) {
+    logger.info('Invalid structured text value', fieldValue);
+    return fieldValue;
+  }
 
-  type BlockNode = StructuredTextNode & {
-    originalIndex: number;
-  };
+  logger.info('Translating structured text field', { nodeCount: fieldValue.length });
 
-  const noIdFieldValueArray = noIdFieldValue as StructuredTextNode[];
-  
-  const blockNodes = noIdFieldValueArray.reduce<BlockNode[]>(
+  // Remove any 'id' fields
+  const noIdFieldValue = removeIds(fieldValue) as StructuredTextNode[];
+
+  // Separate out block nodes and track their original positions
+  const blockNodes = noIdFieldValue.reduce<StructuredTextNode[]>(
     (acc, node, index) => {
       if (node?.type === 'block') {
         acc.push({ ...node, originalIndex: index });
@@ -63,15 +68,28 @@ export async function translateStructuredTextValue(
     []
   );
 
-  const fieldValueWithoutBlocks = noIdFieldValueArray.filter(
-    (node: StructuredTextNode) => node?.type !== 'block'
+  // Filter out block nodes for inline translation first
+  const fieldValueWithoutBlocks = noIdFieldValue.filter(
+    (node) => node?.type !== 'block'
   );
 
+  // Extract text strings from the structured text
   const textValues = extractTextValues(fieldValueWithoutBlocks);
+  
+  if (textValues.length === 0) {
+    logger.info('No text values found to translate');
+    return fieldValue;
+  }
 
-  const fromLocaleName = locale.getByTag(fromLocale)?.name || fromLocale;
-  const toLocaleName = locale.getByTag(toLocale)?.name || toLocale;
-  let prompt = pluginParams.prompt
+  logger.info(`Found ${textValues.length} text nodes to translate`);
+
+  // Format locales for better prompt clarity
+  const localeMapper = new Intl.DisplayNames([fromLocale], { type: 'language' });
+  const fromLocaleName = localeMapper.of(fromLocale) || fromLocale;
+  const toLocaleName = localeMapper.of(toLocale) || toLocale;
+
+  // Construct the prompt using the template system for consistency
+  let prompt = (pluginParams.prompt || '')
     .replace(
       '{fieldValue}',
       `translate the following string array ${JSON.stringify(
@@ -81,9 +99,13 @@ export async function translateStructuredTextValue(
       )}`
     )
     .replace('{fromLocale}', fromLocaleName)
-    .replace('{toLocale}', toLocaleName);
+    .replace('{toLocale}', toLocaleName)
+    .replace('{recordContext}', recordContext || 'Record context: No additional context available.');
 
   prompt += '\nReturn the translated strings array in a valid JSON format. The number of returned strings should match the original. Do not trim any empty strings or spaces. Return just the array of strings, do not nest the array into an object.  The number of returned strings should match the original. Spaces and empty strings should remain unaltered. Do not remove any empty strings or spaces.';
+
+  // Log the prompt being sent
+  logger.logPrompt('Structured text translation prompt', prompt);
 
   try {
     let translatedText = '';
@@ -96,6 +118,7 @@ export async function translateStructuredTextValue(
     for await (const chunk of stream) {
       const content = chunk.choices[0]?.delta?.content || '';
       translatedText += content;
+
       if (streamCallbacks?.onStream) {
         streamCallbacks.onStream(translatedText);
       }
@@ -105,54 +128,79 @@ export async function translateStructuredTextValue(
       streamCallbacks.onComplete();
     }
 
-    // Parse the inline translations array
-    const returnedTextValues = JSON.parse(translatedText || '[]');
+    // Log response
+    logger.logResponse('Structured text translation response', translatedText);
 
-    // Reconstruct the inline text portion with the newly translated text
-    const reconstructedObject = reconstructObject(
-      fieldValueWithoutBlocks,
-      returnedTextValues
-    );
+    try {
+      const translatedValues = JSON.parse(translatedText);
 
-    let finalReconstructedObject = reconstructedObject;
-
-    if (blockNodes.length > 0) {
-      // Translate block nodes individually using translateFieldValue
-      const translatedBlockNodes = await translateFieldValue(
-        blockNodes,
-        pluginParams,
-        toLocale,
-        fromLocale,
-        'rich_text',
-        openai,
-        '',
-        apiToken,
-        '',
-        streamCallbacks
-      ) as BlockNode[];
-      for (const node of translatedBlockNodes) {
-        finalReconstructedObject = insertObjectAtIndex(
-          finalReconstructedObject as StructuredTextNode[],
-          node,
-          node.originalIndex
-        );
+      if (!Array.isArray(translatedValues)) {
+        logger.warning('Translation response is not an array', translatedValues);
+        return fieldValue;
       }
+
+      if (translatedValues.length !== textValues.length) {
+        logger.warning(
+          `Translation mismatch: got ${translatedValues.length} values, expected ${textValues.length}`,
+          { original: textValues, translated: translatedValues }
+        );
+        return fieldValue;
+      }
+
+      // Reconstruct the inline text portion with the newly translated text
+      const reconstructedObject = reconstructObject(
+        fieldValueWithoutBlocks,
+        translatedValues
+      ) as StructuredTextNode[];
+
+      // Insert block nodes back into their original positions
+      let finalReconstructedObject = reconstructedObject;
+
+      // If there are block nodes, translate them separately
+      if (blockNodes.length > 0) {
+        logger.info(`Translating ${blockNodes.length} block nodes`);
+        
+        // Key change: Pass the entire blockNodes array to translateFieldValue
+        // and use 'rich_text' as the field type instead of translating each block separately
+        const translatedBlockNodes = await translateFieldValue(
+          blockNodes,
+          pluginParams,
+          toLocale,
+          fromLocale,
+          'rich_text', // Use rich_text instead of block
+          openai,
+          '',
+          apiToken,
+          '',
+          streamCallbacks,
+          recordContext
+        ) as StructuredTextNode[];
+
+        // Insert translated blocks back at their original positions
+        for (const node of translatedBlockNodes) {
+          if (node.originalIndex !== undefined) {
+            finalReconstructedObject = insertObjectAtIndex(
+              finalReconstructedObject,
+              node,
+              node.originalIndex
+            );
+          }
+        }
+      }
+
+      // Remove temporary 'originalIndex' keys
+      const cleanedReconstructedObject = (finalReconstructedObject as StructuredTextNode[]).map(
+        ({ originalIndex, ...rest }) => rest
+      );
+
+      logger.info('Successfully translated structured text');
+      return cleanedReconstructedObject;
+    } catch (jsonError) {
+      logger.error('Failed to parse translation response as JSON', jsonError);
+      return fieldValue;
     }
-
-    // Remove temporary 'originalIndex' keys
-    const cleanedReconstructedObject = (finalReconstructedObject as StructuredTextNode[]).map(
-      ({
-        originalIndex,
-        ...rest
-      }: {
-        originalIndex?: number;
-        [key: string]: unknown;
-      }) => rest
-    );
-
-    return cleanedReconstructedObject;
   } catch (error) {
-    console.error('Translation error:', error);
+    logger.error('Structured text translation error', error);
     throw error;
   }
 }

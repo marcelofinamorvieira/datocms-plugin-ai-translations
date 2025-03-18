@@ -6,7 +6,7 @@
 import OpenAI from 'openai';
 import { buildClient } from '@datocms/cma-client-browser';
 import type { ExecuteFieldDropdownActionCtx } from 'datocms-plugin-sdk';
-import {
+import { 
   type ctxParamsType,
   modularContentVariations,
 } from '../../entrypoints/Config/ConfigScreen';
@@ -16,10 +16,16 @@ import { translateSeoFieldValue } from './SeoTranslation';
 import { translateStructuredTextValue } from './StructuredTextTranslation';
 import { translateFileFieldValue } from './FileFieldTranslation';
 import { deleteItemIdKeys } from './utils';
+import { createLogger } from '../logging/Logger';
 
-type StreamCallbacks = {
+/**
+ * Callbacks for streaming translation results.
+ */
+export type StreamCallbacks = {
   onStream?: (chunk: string) => void;
   onComplete?: () => void;
+  checkCancellation?: () => boolean;
+  abortSignal?: AbortSignal;
 };
 
 /**
@@ -36,8 +42,13 @@ export async function translateFieldValue(
   fieldTypePrompt: string,
   apiToken: string,
   fieldId: string,
-  streamCallbacks?: StreamCallbacks
+  streamCallbacks?: StreamCallbacks,
+  recordContext = ''
 ): Promise<unknown> {
+  const logger = createLogger(pluginParams, 'translateFieldValue');
+  
+  logger.info(`Translating field of type: ${fieldType}`, { fromLocale, toLocale });
+  
   // If this field type is not in the plugin config or has no value, return as is
   let isFieldTranslatable = pluginParams.translationFields.includes(fieldType);
 
@@ -57,43 +68,62 @@ export async function translateFieldValue(
     return fieldValue;
   }
 
-  const commonArgs = [
-    fieldValue,
-    pluginParams,
-    toLocale,
-    fromLocale,
-    openai,
-  ] as const;
-
   switch (fieldType) {
     case 'seo':
       return translateSeoFieldValue(
-        ...commonArgs,
+        fieldValue,
+        pluginParams,
+        toLocale,
+        fromLocale,
+        openai,
         fieldTypePrompt,
-        streamCallbacks
+        streamCallbacks,
+        recordContext
       );
     case 'structured_text':
       return translateStructuredTextValue(
-        ...commonArgs,
+        fieldValue,
+        pluginParams,
+        toLocale,
+        fromLocale,
+        openai,
         apiToken,
-        streamCallbacks
+        streamCallbacks,
+        recordContext
       );
     case 'rich_text':
     case 'framed_single_block':
       return translateBlockValue(
-        ...commonArgs,
+        fieldValue,
+        pluginParams,
+        toLocale,
+        fromLocale,
+        openai,
         apiToken,
         fieldType,
-        streamCallbacks
+        streamCallbacks,
+        recordContext
       );
     case 'file':
     case 'gallery':
-      return translateFileFieldValue(...commonArgs, fieldType, streamCallbacks);
+      return translateFileFieldValue(
+        fieldValue,
+        pluginParams,
+        toLocale,
+        fromLocale,
+        openai,
+        streamCallbacks,
+        recordContext
+      );
     default:
       return translateDefaultFieldValue(
-        ...commonArgs,
-        fieldTypePrompt,
-        streamCallbacks
+        fieldValue,
+        pluginParams,
+        toLocale,
+        fromLocale,
+        openai,
+        streamCallbacks,
+        recordContext
       );
   }
 }
@@ -101,7 +131,7 @@ export async function translateFieldValue(
 /**
  * Specifically handles block-based fields in a rich text.
  */
-export async function translateBlockValue(
+async function translateBlockValue(
   fieldValue: unknown,
   pluginParams: ctxParamsType,
   toLocale: string,
@@ -109,23 +139,17 @@ export async function translateBlockValue(
   openai: OpenAI,
   apiToken: string,
   fieldType: string,
-  streamCallbacks?: StreamCallbacks
+  streamCallbacks?: StreamCallbacks,
+  recordContext = ''
 ) {
+  const logger = createLogger(pluginParams, 'translateBlockValue');
+  logger.info('Translating block value');
+  
   const isFramedSingleBlock = fieldType === 'framed_single_block';
   // Clean block array from any leftover item IDs
   const cleanedFieldValue = deleteItemIdKeys(
     !isFramedSingleBlock ? fieldValue : [fieldValue]
-  ) as BlockItem[];
-
-  // Define block type for proper type checking
-  type BlockItem = {
-    itemTypeId?: string;
-    blockModelId?: string;
-    originalIndex?: number;
-    type?: string;
-    children?: unknown;
-    [key: string]: unknown;
-  };
+  ) as Array<Record<string, unknown>>;
 
   const client = buildClient({ apiToken });
 
@@ -135,7 +159,7 @@ export async function translateBlockValue(
     if (!blockModelId) continue;
 
     // Fetch fields for this specific block
-    const fields = await client.fields.list(blockModelId);
+    const fields = await client.fields.list(blockModelId as string);
     const fieldTypeDictionary = fields.reduce((acc, field) => {
       acc[field.api_key] = {
         editor: field.appearance.editor,
@@ -156,6 +180,17 @@ export async function translateBlockValue(
         continue;
       }
 
+      // Show progress if using streaming callbacks
+      if (streamCallbacks?.onStream) {
+        streamCallbacks.onStream(`Translating block field: ${field}...`);
+      }
+      
+      // Check for cancellation
+      if (streamCallbacks?.checkCancellation?.()) {
+        logger.info('Translation cancelled by user');
+        return cleanedFieldValue;
+      }
+
       let nestedPrompt = ' Return the response in the format of ';
       nestedPrompt +=
         fieldPrompt[fieldTypeDictionary[field]?.editor as keyof typeof fieldPrompt] ||
@@ -171,11 +206,13 @@ export async function translateBlockValue(
         nestedPrompt,
         apiToken,
         fieldTypeDictionary[field]?.id || '',
-        streamCallbacks
+        streamCallbacks,
+        recordContext
       );
     }
   }
 
+  logger.info('Block translation completed');
   return isFramedSingleBlock ? cleanedFieldValue[0] : cleanedFieldValue;
 }
 
@@ -190,9 +227,13 @@ const TranslateField = async (
   toLocale: string,
   fromLocale: string,
   fieldType: string,
-  streamCallbacks?: StreamCallbacks
+  streamCallbacks?: StreamCallbacks,
+  recordContext = ''
 ) => {
+  const logger = createLogger(pluginParams, 'TranslateField');
+  
   if (pluginParams.apiKeysToBeExcludedFromThisPlugin.includes(ctx.field.id)) {
+    logger.info('Field excluded from translation by configuration', { fieldId: ctx.field.id });
     return;
   }
 
@@ -225,9 +266,10 @@ const TranslateField = async (
     fieldType,
     newOpenai,
     fieldTypePrompt,
-    ctx.currentUserAccessToken as string,
+    ctx.currentUserAccessToken || '',
     ctx.field.id,
-    streamCallbacks
+    streamCallbacks,
+    recordContext
   );
 
   // Set the new value in the correct locale
@@ -236,5 +278,37 @@ const TranslateField = async (
   // Re-enable the field
   ctx.disableField(ctx.fieldPath, false);
 };
+
+/**
+ * Generates context about a record to improve translation accuracy.
+ * This extracts relevant information from the record's values in the source locale.
+ */
+export function generateRecordContext(formValues: Record<string, unknown>, sourceLocale: string): string {
+  if (!formValues) return '';
+  
+  // Extract title or name if available
+  const titleField = Object.entries(formValues).find(([key]) => 
+    key.toLowerCase().includes('title') || key.toLowerCase().includes('name')
+  );
+  
+  // Extract description if available
+  const descriptionField = Object.entries(formValues).find(([key]) => 
+    key.toLowerCase().includes('description') || key.toLowerCase().includes('summary')
+  );
+  
+  let context = '';
+  
+  if (titleField?.[1] && typeof titleField[1] === 'object' && titleField[1] !== null && sourceLocale in titleField[1]) {
+    const value = (titleField[1] as Record<string, string>)[sourceLocale];
+    context += `Title: ${value}\n`;
+  }
+  
+  if (descriptionField?.[1] && typeof descriptionField[1] === 'object' && descriptionField[1] !== null && sourceLocale in descriptionField[1]) {
+    const value = (descriptionField[1] as Record<string, string>)[sourceLocale];
+    context += `Description: ${value}\n`;
+  }
+  
+  return context;
+}
 
 export default TranslateField;

@@ -21,6 +21,7 @@ type StreamCallbacks = {
  * @param openai - OpenAI client instance.
  * @param fieldTypePrompt - additional instructions for formatting.
  * @param streamCallbacks - optional stream callbacks for handling translation progress.
+ * @param recordContext - optional context from the record to aid translation.
  * @returns the updated SEO object with translated title/description.
  */
 export async function translateSeoFieldValue(
@@ -30,7 +31,8 @@ export async function translateSeoFieldValue(
   fromLocale: string,
   openai: OpenAI,
   fieldTypePrompt: string,
-  streamCallbacks?: StreamCallbacks
+  streamCallbacks?: StreamCallbacks,
+  recordContext = ''
 ): Promise<unknown> {
   const seoObject = fieldValue as Record<string, unknown>;
   const seoObjectToTranslate = {
@@ -38,17 +40,21 @@ export async function translateSeoFieldValue(
     description: seoObject.description || '',
   };
 
-  const fromLocaleName = locale.getByTag(fromLocale)?.name || fromLocale;
-  const toLocaleName = locale.getByTag(toLocale)?.name || toLocale;
-
-  let formattedPrompt = pluginParams.prompt
-    .replace('{fieldValue}', JSON.stringify(seoObjectToTranslate))
-    .replace('{fromLocale}', fromLocaleName)
-    .replace('{toLocale}', toLocaleName);
-
-  formattedPrompt += `\n${fieldTypePrompt}`;
-
   try {
+    // Extract language names for better prompt clarity
+    const fromLocaleName = locale.getByTag(fromLocale)?.name || fromLocale;
+    const toLocaleName = locale.getByTag(toLocale)?.name || toLocale;
+
+    // Base prompt with replaceable placeholders
+    const prompt = (pluginParams.prompt || '')
+      .replace('{fieldValue}', JSON.stringify(seoObjectToTranslate))
+      .replace('{fromLocale}', fromLocaleName)
+      .replace('{toLocale}', toLocaleName)
+      .replace('{recordContext}', recordContext || 'Record context: No additional context available.');
+
+    // Using template literal instead of string concatenation as per linting rules
+    const formattedPrompt = `${prompt}\n${fieldTypePrompt}`;
+
     let translatedText = '';
     const stream = await openai.chat.completions.create({
       messages: [{ role: 'user', content: formattedPrompt }],
