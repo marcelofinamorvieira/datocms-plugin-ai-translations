@@ -50,3 +50,7 @@ If enabled:
 
 - **Invalid API Key**: Ensure your OpenAI API key is correct and has sufficient usage limits.
 - **Localization**: Make sure your project has at least two locales, otherwise translation actions won’t appear.
+
+## License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
