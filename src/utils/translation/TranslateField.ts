@@ -1,7 +1,14 @@
-// TranslateField.ts
-// ------------------------------------------------------
-// This main entry point coordinates the logic for translating
-// various field types by delegating to specialized modules.
+/**
+ * TranslateField.ts
+ * ------------------------------------------------------
+ * This module serves as the main orchestrator for the AI translation system.
+ * It coordinates the logic for translating various field types in DatoCMS by
+ * delegating to specialized translator modules based on field type.
+ * 
+ * The module handles field type detection and routing to the appropriate
+ * specialized translators for complex fields like SEO, structured text,
+ * rich text, and file fields.
+ */
 
 import OpenAI from 'openai';
 import { buildClient } from '@datocms/cma-client-browser';
@@ -19,7 +26,13 @@ import { deleteItemIdKeys } from './utils';
 import { createLogger } from '../logging/Logger';
 
 /**
- * Callbacks for streaming translation results.
+ * Defines the callback interface for streaming translation results
+ * 
+ * @interface StreamCallbacks
+ * @property {Function} onStream - Callback triggered for each chunk of translated content
+ * @property {Function} onComplete - Callback triggered when translation is complete
+ * @property {Function} checkCancellation - Function to check if translation should be cancelled
+ * @property {AbortSignal} abortSignal - Signal for aborting translation operation
  */
 export type StreamCallbacks = {
   onStream?: (chunk: string) => void;
@@ -29,8 +42,25 @@ export type StreamCallbacks = {
 };
 
 /**
- * Main function to handle field translation. Decides which specialized
- * translator to use based on field type, e.g., 'seo', 'structured_text'.
+ * Routes field translation to the appropriate specialized translator based on field type
+ * 
+ * This function serves as the primary decision point for determining which translator
+ * to use for a given field. It examines the field type and delegates to specialized
+ * translators for complex fields (SEO, structured text, etc.) or falls back to the
+ * default translator for simple field types.
+ * 
+ * @param {unknown} fieldValue - The value of the field to translate
+ * @param {ctxParamsType} pluginParams - Plugin configuration parameters
+ * @param {string} toLocale - Target locale code
+ * @param {string} fromLocale - Source locale code
+ * @param {string} fieldType - The DatoCMS field type
+ * @param {OpenAI} openai - OpenAI client instance
+ * @param {string} fieldTypePrompt - Additional prompt for special field types
+ * @param {string} apiToken - DatoCMS API token
+ * @param {string | undefined} fieldId - ID of the field being translated
+ * @param {StreamCallbacks} streamCallbacks - Optional callbacks for streaming translations
+ * @param {string} recordContext - Additional context about the record being translated
+ * @returns {Promise<unknown>} - The translated field value
  */
 export async function translateFieldValue(
   fieldValue: unknown,
@@ -41,7 +71,7 @@ export async function translateFieldValue(
   openai: OpenAI,
   fieldTypePrompt: string,
   apiToken: string,
-  fieldId: string,
+  fieldId: string | undefined,
   streamCallbacks?: StreamCallbacks,
   recordContext = ''
 ): Promise<unknown> {
@@ -52,7 +82,10 @@ export async function translateFieldValue(
   // If this field type is not in the plugin config or has no value, return as is
   let isFieldTranslatable = pluginParams.translationFields.includes(fieldType);
 
-  if (pluginParams.apiKeysToBeExcludedFromThisPlugin.includes(fieldId)) {
+  // Convert fieldId to a string to handle the undefined case
+  const safeFieldId = fieldId || '';
+
+  if (pluginParams.apiKeysToBeExcludedFromThisPlugin.includes(safeFieldId)) {
     return fieldValue;
   }
 
@@ -129,7 +162,22 @@ export async function translateFieldValue(
 }
 
 /**
- * Specifically handles block-based fields in a rich text.
+ * Translates modular content and framed block fields
+ * 
+ * This specialized translator handles block-based content structures,
+ * including nested fields within blocks. It dynamically fetches field metadata
+ * for each block and processes each field according to its type.
+ * 
+ * @param {unknown} fieldValue - The block value to translate
+ * @param {ctxParamsType} pluginParams - Plugin configuration parameters
+ * @param {string} toLocale - Target locale code
+ * @param {string} fromLocale - Source locale code 
+ * @param {OpenAI} openai - OpenAI client instance
+ * @param {string} apiToken - DatoCMS API token
+ * @param {string} fieldType - The specific block field type
+ * @param {StreamCallbacks} streamCallbacks - Optional callbacks for streaming translations
+ * @param {string} recordContext - Additional context about the record being translated
+ * @returns {Promise<unknown>} - The translated block value
  */
 async function translateBlockValue(
   fieldValue: unknown,
@@ -201,7 +249,7 @@ async function translateBlockValue(
         pluginParams,
         toLocale,
         fromLocale,
-        fieldTypeDictionary[field]?.editor || '',
+        fieldTypeDictionary[field]?.editor || 'text',
         openai,
         nestedPrompt,
         apiToken,
@@ -217,10 +265,23 @@ async function translateBlockValue(
 }
 
 /**
- * This is the top-level function called by the plugin to translate
- * a field to a given locale.
+ * Main entry point for translating a field value from one locale to another
+ * 
+ * This function is the primary interface called by the DatoCMS plugin UI.
+ * It handles all the setup, including creating an OpenAI client, generating
+ * record context, and managing streaming responses back to the UI.
+ * 
+ * @param {unknown} fieldValue - The field value to translate
+ * @param {ExecuteFieldDropdownActionCtx} ctx - DatoCMS plugin context
+ * @param {ctxParamsType} pluginParams - Plugin configuration parameters
+ * @param {string} toLocale - Target locale code
+ * @param {string} fromLocale - Source locale code
+ * @param {string} fieldType - The DatoCMS field type
+ * @param {StreamCallbacks} streamCallbacks - Optional callbacks for streaming translations
+ * @param {string} recordContext - Additional context about the record being translated
+ * @returns {Promise<unknown>} - The translated field value
  */
-const TranslateField = async (
+async function TranslateField(
   fieldValue: unknown,
   ctx: ExecuteFieldDropdownActionCtx,
   pluginParams: ctxParamsType,
@@ -229,86 +290,94 @@ const TranslateField = async (
   fieldType: string,
   streamCallbacks?: StreamCallbacks,
   recordContext = ''
-) => {
-  const logger = createLogger(pluginParams, 'TranslateField');
-  
-  if (pluginParams.apiKeysToBeExcludedFromThisPlugin.includes(ctx.field.id)) {
-    logger.info('Field excluded from translation by configuration', { fieldId: ctx.field.id });
-    return;
-  }
-
-  // Break down fieldPath to point to the target locale in a localized field
-  const fieldPathArray = ctx.fieldPath.split('.');
-  fieldPathArray[fieldPathArray.length - 1] = toLocale;
-
-  // Disable the original field during translation
-  ctx.disableField(ctx.fieldPath, true);
-
-  // Determine the format prompt
-  let fieldTypePrompt = 'Return the response in the format of ';
-  if (fieldType !== 'structured_text' && fieldType !== 'rich_text') {
-    const typePromptKey = fieldType as keyof typeof fieldPrompt;
-    fieldTypePrompt += fieldPrompt[typePromptKey] || '';
-  }
-
-  // Create a new OpenAI client
-  const newOpenai = new OpenAI({
+) {
+  const apiToken = await ctx.currentUserAccessToken;
+  // Create OpenAI client instance
+  const openai = new OpenAI({
     apiKey: pluginParams.apiKey,
-    dangerouslyAllowBrowser: true,
   });
 
-  // Execute the translation
-  const translated = await translateFieldValue(
-    fieldValue,
-    pluginParams,
-    toLocale,
-    fromLocale,
-    fieldType,
-    newOpenai,
-    fieldTypePrompt,
-    ctx.currentUserAccessToken || '',
-    ctx.field.id,
-    streamCallbacks,
-    recordContext
-  );
+  try {
+    const logger = createLogger(pluginParams, 'TranslateField');
+    logger.info('Starting field translation', { fieldType, fromLocale, toLocale });
 
-  // Set the new value in the correct locale
-  ctx.setFieldValue(fieldPathArray.join('.'), translated);
+    // Generate record context if not provided or use the existing one
+    const contextToUse = ctx.formValues && !recordContext
+      ? generateRecordContext(ctx.formValues, fromLocale)
+      : recordContext;
 
-  // Re-enable the field
-  ctx.disableField(ctx.fieldPath, false);
-};
+    if (streamCallbacks?.onStream) {
+      streamCallbacks.onStream('Loading...');
+    }
+
+    // Get the field API key and ensure it's always a string
+    // Using nullish coalescing operator to handle undefined value
+    const fieldApiKey = ctx.fieldPath ?? '';
+
+    const translatedValue = await translateFieldValue(
+      fieldValue,
+      pluginParams,
+      toLocale,
+      fromLocale,
+      fieldType,
+      openai,
+      '',
+      apiToken as string,
+      fieldApiKey, // This is already a string because of the nullish coalescing operator
+      streamCallbacks,
+      contextToUse
+    );
+
+    logger.info('Field translation completed');
+    return translatedValue;
+  } catch (error) {
+    console.error('Translation failed:', error);
+    throw error;
+  }
+}
 
 /**
- * Generates context about a record to improve translation accuracy.
- * This extracts relevant information from the record's values in the source locale.
+ * Generates descriptive context about a record to improve translation accuracy
+ * 
+ * This function extracts key information from a record's source locale values
+ * to provide context for the AI model, helping it understand the content
+ * it's translating. It focuses on title, name, and content fields.
+ * 
+ * @param {Record<string, unknown>} formValues - The current form values from DatoCMS
+ * @param {string} sourceLocale - The source locale code
+ * @returns {string} - Formatted context string for use in translation prompts
  */
 export function generateRecordContext(formValues: Record<string, unknown>, sourceLocale: string): string {
   if (!formValues) return '';
-  
-  // Extract title or name if available
-  const titleField = Object.entries(formValues).find(([key]) => 
-    key.toLowerCase().includes('title') || key.toLowerCase().includes('name')
-  );
-  
-  // Extract description if available
-  const descriptionField = Object.entries(formValues).find(([key]) => 
-    key.toLowerCase().includes('description') || key.toLowerCase().includes('summary')
-  );
-  
-  let context = '';
-  
-  if (titleField?.[1] && typeof titleField[1] === 'object' && titleField[1] !== null && sourceLocale in titleField[1]) {
-    const value = (titleField[1] as Record<string, string>)[sourceLocale];
-    context += `Title: ${value}\n`;
+
+  let contextStr = 'Content context: ';
+  let hasAddedContext = false;
+
+  // Look for values that might represent titles, names, or main content
+  for (const key in formValues) {
+    const val = formValues[key];
+    // Only use string values from the source locale
+    if (typeof val === 'object' && val !== null) {
+      const localized = val as Record<string, unknown>;
+      if (typeof localized[sourceLocale] === 'string') {
+        const value = localized[sourceLocale] as string;
+        if (value && value.length < 300) {
+          // Focus on fields likely to contain important context
+          if (
+            key.toLowerCase().includes('title') ||
+            key.toLowerCase().includes('name') ||
+            key.toLowerCase().includes('content') ||
+            key.toLowerCase().includes('description')
+          ) {
+            contextStr += `${key}: ${value}. `;
+            hasAddedContext = true;
+          }
+        }
+      }
+    }
   }
-  
-  if (descriptionField?.[1] && typeof descriptionField[1] === 'object' && descriptionField[1] !== null && sourceLocale in descriptionField[1]) {
-    const value = (descriptionField[1] as Record<string, string>)[sourceLocale];
-    context += `Description: ${value}\n`;
-  }
-  
-  return context;
+
+  return hasAddedContext ? contextStr : '';
 }
 
 export default TranslateField;

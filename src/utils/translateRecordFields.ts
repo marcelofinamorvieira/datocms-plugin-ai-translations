@@ -1,3 +1,19 @@
+/**
+ * translateRecordFields.ts
+ * ------------------------------------------------------
+ * This module provides functionality for batch translating all localizable fields
+ * in a DatoCMS record from a source locale to multiple target locales.
+ * 
+ * The module orchestrates the translation process by:
+ * 1. Filtering fields to identify which ones are localizable and translatable
+ * 2. Managing the translation workflow for each field-locale combination
+ * 3. Providing real-time progress updates via callbacks
+ * 4. Supporting cancellation of in-progress translations
+ * 5. Automatically updating form values with translated content
+ * 
+ * This serves as the foundation for the record-level translation features in the plugin.
+ */
+
 import type { RenderItemFormSidebarPanelCtx } from 'datocms-plugin-sdk';
 import OpenAI from 'openai';
 import {
@@ -8,33 +24,18 @@ import { fieldPrompt } from '../prompts/FieldPrompts';
 import { translateFieldValue, generateRecordContext } from './translation/TranslateField';
 
 /**
- * translateRecordFields.ts
- *
- * This utility function translates all translatable fields of a record from a given source locale
- * into multiple target locales. It leverages the translateFieldValue function for each field-locale pair.
- *
- * Newly added functionality:
- * - Accepts callbacks (onStart and onComplete) to report the start and completion of each
- *   field-locale translation. These callbacks are used by the DatoGPTTranslateSidebar to display
- *   chat-like bubbles showing translation progress.
- *
- * Process:
- * 1. Fetch all fields for the current model.
- * 2. For each field that can be translated, iterate over the target locales.
- * 3. For each field-locale pair, call onStart callback, then translate, then onComplete callback.
- *
- * Parameters:
- * - ctx: DatoCMS sidebar panel context, providing form values, field list, etc.
- * - pluginParams: Configuration parameters including API Key, model, etc.
- * - targetLocales: Array of locales into which we want to translate fields.
- * - sourceLocale: The locale from which fields are translated.
- * - options: An object with callbacks:
- *    onStart(fieldLabel: string, locale: string)
- *    onComplete(fieldLabel: string, locale: string)
- *
- * Returns: Promise<void> once all translations are done.
+ * Options interface for the translation process
+ * 
+ * Provides callback hooks that allow the UI to respond to translation events
+ * and enables cancellation support for long-running translations.
+ * 
+ * @interface TranslateOptions
+ * @property {Function} onStart - Called when translation starts for a field-locale pair
+ * @property {Function} onComplete - Called when translation completes for a field-locale pair
+ * @property {Function} onStream - Called with incremental translation results
+ * @property {Function} checkCancellation - Function to check if translation should be cancelled
+ * @property {AbortSignal} abortSignal - Signal for aborting translation operation
  */
-
 type TranslateOptions = {
   onStart?: (fieldLabel: string, locale: string, fieldPath: string) => void;
   onComplete?: (fieldLabel: string, locale: string) => void;
@@ -43,18 +44,47 @@ type TranslateOptions = {
   abortSignal?: AbortSignal;
 };
 
+/**
+ * Interface for a field with localized values
+ * 
+ * Represents a map where keys are locale codes and values are the field content
+ * in that specific locale.
+ * 
+ * @interface LocalizedField
+ * @property {unknown} [locale] - Field value for the specified locale
+ */
 interface LocalizedField {
   [locale: string]: unknown;
 }
 
+/**
+ * Translates all eligible fields in a record to multiple target locales
+ * 
+ * This function is the main entry point for batch translating record fields. It:
+ * 1. Identifies which fields are localizable and configured for translation
+ * 2. Extracts values from the source locale
+ * 3. Translates each field to each target locale using the appropriate specialized translator
+ * 4. Updates the form values with the translated content
+ * 5. Provides progress feedback through the supplied callback functions
+ * 
+ * Translation can be cancelled at any point using the checkCancellation callback
+ * or the abortSignal.
+ * 
+ * @param {RenderItemFormSidebarPanelCtx} ctx - DatoCMS sidebar context providing access to form values and fields
+ * @param {ctxParamsType} pluginParams - Plugin configuration parameters
+ * @param {string[]} targetLocales - Array of locale codes to translate into
+ * @param {string} sourceLocale - Source locale code to translate from
+ * @param {TranslateOptions} options - Optional callbacks and cancellation controls
+ * @returns {Promise<void>} - Resolves when all translations are complete or cancelled
+ */
 export async function translateRecordFields(
   ctx: RenderItemFormSidebarPanelCtx,
   pluginParams: ctxParamsType,
   targetLocales: string[],
   sourceLocale: string,
   options: TranslateOptions = {}
-) {
-  // Ensure we have an OpenAI instance ready
+): Promise<void> {
+  // Initialize OpenAI client for translation
   const openai = new OpenAI({
     apiKey: pluginParams.apiKey,
     dangerouslyAllowBrowser: true,
@@ -62,30 +92,30 @@ export async function translateRecordFields(
 
   const currentFormValues = ctx.formValues;
 
-  // We'll translate only fields that can be translated (excluded by `fieldsThatDontNeedTranslation` in TranslateField)
-  // We'll rely on translateFieldValue to skip irrelevant fields.
-  // For each field, if it's localized and can be translated, we do so.
+  // Get all fields that belong to the current item type
   const fieldsArray = Object.values(ctx.fields).filter(
     (field) => field?.relationships.item_type.data.id === ctx.itemType.id
   );
 
+  // Process each field
   for (const field of fieldsArray) {
     if (!field || !field.attributes) {
-      continue; // Skip if field is undefined or doesn't have attributes
+      continue; // Skip invalid fields
     }
     
-    // Check for cancellation before starting a new field
+    // Check for user-initiated cancellation
     if (options.checkCancellation?.()) {
-      return; // Exit the function if cancellation was requested
+      return; // Exit early if translation was cancelled
     }
     
     const fieldType = field.attributes.appearance.editor;
     const fieldValue = currentFormValues[field.attributes.api_key];
 
-    // If field is not localized or doesn't have a value in the source locale, skip
+    // Determine if this field is eligible for translation based on configuration
     let isFieldTranslatable =
       pluginParams.translationFields.includes(fieldType);
 
+    // Handle special cases for rich_text/modular content and file/gallery fields
     if (
       (pluginParams.translationFields.includes('rich_text') &&
         modularContentVariations.includes(fieldType)) ||
@@ -95,19 +125,21 @@ export async function translateRecordFields(
       isFieldTranslatable = true;
     }
 
+    // Skip fields that are not translatable, not localized, or explicitly excluded
     if (
       !isFieldTranslatable ||
       !field.attributes.localized ||
       pluginParams.apiKeysToBeExcludedFromThisPlugin.includes(field.id)
-    )
+    ) {
       continue;
+    }
+
+    // Skip if source locale value doesn't exist
     if (
-      !(
-        fieldValue &&
+      !(fieldValue &&
         typeof fieldValue === 'object' &&
         !Array.isArray(fieldValue) &&
-        fieldValue[sourceLocale as keyof typeof fieldValue]
-      )
+        fieldValue[sourceLocale as keyof typeof fieldValue])
     ) {
       continue;
     }
@@ -115,7 +147,7 @@ export async function translateRecordFields(
     const sourceLocaleValue =
       fieldValue[sourceLocale as keyof typeof fieldValue];
 
-    //if the field is a localized modular content, and the source locale is empty, skip
+    // Skip empty modular content arrays
     if (
       Array.isArray(sourceLocaleValue) &&
       (sourceLocaleValue as unknown[]).length === 0
@@ -123,36 +155,35 @@ export async function translateRecordFields(
       continue;
     }
 
-    // Determine a simple field label for the UI
+    // Use field label for UI display, falling back to API key if no label is defined
     const fieldLabel = field.attributes.label || field.attributes.api_key;
 
-    // For each target locale, translate the field
+    // Process each target locale for this field
     for (const locale of targetLocales) {
-      // Check for cancellation before starting a new locale
+      // Check for cancellation before starting each locale
       if (options.checkCancellation?.()) {
-        return; // Exit the function if cancellation was requested
+        return; // Exit if translation was cancelled
       }
       
-      // Inform the sidebar that translation for this field-locale is starting
+      // Notify translation start for this field-locale pair
       options.onStart?.(
         fieldLabel,
         locale,
         `${field.attributes.api_key}.${locale}`
       );
 
-      // Determine field type prompt
+      // Prepare specialized prompt for the field type
       let fieldTypePrompt = 'Return the response in the format of ';
       const fieldPromptObject = fieldPrompt;
-
       const baseFieldPrompts = fieldPromptObject ? fieldPromptObject : {};
 
-      // If structured or rich text, a special prompt is handled inside translateFieldValue.
+      // Structured and rich text fields use specialized prompts defined elsewhere
       if (fieldType !== 'structured_text' && fieldType !== 'rich_text') {
         fieldTypePrompt +=
           baseFieldPrompts[fieldType as keyof typeof baseFieldPrompts] || '';
       }
 
-      // Create streaming callbacks for this field-locale pair
+      // Set up streaming callbacks to provide real-time updates for this translation
       const streamCallbacks = {
         onStream: (chunk: string) => {
           options.onStream?.(fieldLabel, locale, chunk);
@@ -164,10 +195,10 @@ export async function translateRecordFields(
         abortSignal: options.abortSignal
       };
 
-      // Generate record context
+      // Generate context about the record to improve translation quality
       const recordContext = generateRecordContext(ctx.formValues, sourceLocale);
 
-      // Translate the field value with streaming support
+      // Perform the actual translation with streaming support
       const translatedFieldValue = await translateFieldValue(
         (fieldValue as LocalizedField)[sourceLocale],
         pluginParams,
@@ -182,7 +213,7 @@ export async function translateRecordFields(
         recordContext
       );
 
-      // Update form values with the translated field
+      // Update the form with the newly translated value
       ctx.setFieldValue(
         `${field.attributes.api_key}.${locale}`,
         translatedFieldValue

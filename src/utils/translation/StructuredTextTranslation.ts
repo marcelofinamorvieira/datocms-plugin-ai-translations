@@ -1,7 +1,16 @@
-// StructuredTextTranslation.ts
-// ------------------------------------------------------
-// This file manages translations of structured text fields, including
-// extracting text nodes, translating block nodes, and reassembling.
+/**
+ * StructuredTextTranslation.ts
+ * ------------------------------------------------------
+ * This file manages translations of structured text fields from DatoCMS.
+ * It handles extracting text nodes, translating block nodes, and reassembling
+ * the content after translation while preserving the original structure.
+ * 
+ * The module provides functionality to:
+ * - Extract and track text values from structured text nodes
+ * - Process block nodes separately to maintain rich formatting
+ * - Translate content while preserving structure
+ * - Handle streaming responses from OpenAI API
+ */
 
 import type OpenAI from 'openai';
 import type { ctxParamsType } from '../../entrypoints/Config/ConfigScreen';
@@ -14,6 +23,14 @@ import {
   removeIds
 } from './utils';
 
+/**
+ * Callback interfaces for handling streaming responses
+ * @interface StreamCallbacks
+ * @property {Function} onStream - Callback function for handling each stream chunk
+ * @property {Function} onComplete - Callback function triggered when streaming completes
+ * @property {Function} checkCancellation - Function to check if translation should be cancelled
+ * @property {AbortSignal} abortSignal - Signal to abort the translation process
+ */
 type StreamCallbacks = {
   onStream?: (chunk: string) => void;
   onComplete?: () => void;
@@ -21,7 +38,16 @@ type StreamCallbacks = {
   abortSignal?: AbortSignal;
 };
 
-// Define structured text node types for better type safety
+/**
+ * Interface representing a structured text node from DatoCMS
+ * Includes standard properties and allows for additional dynamic properties
+ * 
+ * @interface StructuredTextNode
+ * @property {string} type - Node type (e.g., 'paragraph', 'heading', 'block')
+ * @property {string} value - Text content of the node
+ * @property {string} item - Reference to a linked item
+ * @property {number} originalIndex - Original position in the document (for tracking)
+ */
 interface StructuredTextNode {
   type?: string;
   value?: string;
@@ -31,7 +57,45 @@ interface StructuredTextNode {
 }
 
 /**
- * Translates a structured text field value
+ * Ensures the array lengths match, with fallback strategies if they don't
+ * 
+ * @param {string[]} originalValues - Original array of text values 
+ * @param {string[]} translatedValues - Translated array that might need adjustment
+ * @returns {string[]} - Adjusted translated values array matching original length
+ */
+function ensureArrayLengthsMatch(originalValues: string[], translatedValues: string[]): string[] {
+  if (originalValues.length === translatedValues.length) {
+    return translatedValues;
+  }
+  
+  // If too few elements, pad with values from the original array
+  if (translatedValues.length < originalValues.length) {
+    return [
+      ...translatedValues,
+      ...originalValues.slice(translatedValues.length).map(val => 
+        // If it's an empty string, keep it empty
+        // Otherwise use the original value
+        val.trim() === '' ? '' : val
+      )
+    ];
+  }
+  
+  // If too many elements, truncate to match original length
+  return translatedValues.slice(0, originalValues.length);
+}
+
+/**
+ * Translates a structured text field value while preserving its structure
+ * 
+ * @param {unknown} fieldValue - The structured text field value to translate
+ * @param {ctxParamsType} pluginParams - Plugin configuration parameters
+ * @param {string} toLocale - Target locale code
+ * @param {string} fromLocale - Source locale code
+ * @param {OpenAI} openai - OpenAI client instance
+ * @param {string} apiToken - DatoCMS API token
+ * @param {StreamCallbacks} streamCallbacks - Optional callbacks for streaming responses
+ * @param {string} recordContext - Optional context about the record being translated
+ * @returns {Promise<unknown>} - The translated structured text value
  */
 export async function translateStructuredTextValue(
   fieldValue: unknown,
@@ -102,7 +166,14 @@ export async function translateStructuredTextValue(
     .replace('{toLocale}', toLocaleName)
     .replace('{recordContext}', recordContext || 'Record context: No additional context available.');
 
-  prompt += '\nReturn the translated strings array in a valid JSON format. The number of returned strings should match the original. Do not trim any empty strings or spaces. Return just the array of strings, do not nest the array into an object.  The number of returned strings should match the original. Spaces and empty strings should remain unaltered. Do not remove any empty strings or spaces.';
+  // Clear, explicit instructions for array handling
+  prompt += `
+IMPORTANT: Your response must be a valid JSON array of strings with EXACTLY ${textValues.length} elements. Each element corresponds to the same position in the original array.
+- Preserve ALL empty strings - do not remove or modify them
+- Maintain the exact array length
+- Return only the array of strings in valid JSON format
+- Do not nest the array in an object
+- Preserve all whitespace and spacing patterns`;
 
   // Log the prompt being sent
   logger.logPrompt('Structured text translation prompt', prompt);
@@ -132,25 +203,41 @@ export async function translateStructuredTextValue(
     logger.logResponse('Structured text translation response', translatedText);
 
     try {
-      const translatedValues = JSON.parse(translatedText);
+      // Clean up response text to handle cases where API might return non-JSON format
+      const cleanedTranslatedText = translatedText.trim()
+        // If response starts with backticks (code block), remove them
+        .replace(/^```json\n/, '')
+        .replace(/^```\n/, '')
+        .replace(/\n```$/, '');
+      
+      const translatedValues = JSON.parse(cleanedTranslatedText);
 
       if (!Array.isArray(translatedValues)) {
         logger.warning('Translation response is not an array', translatedValues);
         return fieldValue;
       }
 
+      // Check for length mismatch and attempt recovery
+      let processedTranslatedValues = translatedValues;
+      
       if (translatedValues.length !== textValues.length) {
         logger.warning(
           `Translation mismatch: got ${translatedValues.length} values, expected ${textValues.length}`,
           { original: textValues, translated: translatedValues }
         );
-        return fieldValue;
+        
+        // Try to fix the length mismatch rather than abandoning the translation
+        processedTranslatedValues = ensureArrayLengthsMatch(textValues, translatedValues);
+        
+        logger.info('Adjusted translated values to match original length', {
+          adjustedLength: processedTranslatedValues.length
+        });
       }
 
       // Reconstruct the inline text portion with the newly translated text
       const reconstructedObject = reconstructObject(
         fieldValueWithoutBlocks,
-        translatedValues
+        processedTranslatedValues
       ) as StructuredTextNode[];
 
       // Insert block nodes back into their original positions
@@ -197,10 +284,12 @@ export async function translateStructuredTextValue(
       return cleanedReconstructedObject;
     } catch (jsonError) {
       logger.error('Failed to parse translation response as JSON', jsonError);
+      // More descriptive error information to help with debugging
+      logger.error('Raw response text', { text: translatedText });
       return fieldValue;
     }
   } catch (error) {
-    logger.error('Structured text translation error', error);
-    throw error;
+    logger.error('Error during structured text translation', error);
+    return fieldValue;
   }
 }

@@ -1,13 +1,30 @@
-// DefaultTranslation.ts
-// ------------------------------------------------------
-// This file provides translation logic for simple text fields,
-// such as single_line, markdown, JSON, etc. It uses the
-// configured OpenAI model to translate from one locale to another.
+/**
+ * DefaultTranslation.ts
+ * ------------------------------------------------------
+ * This module provides translation logic for standard text fields in DatoCMS,
+ * such as single_line, markdown, and JSON fields. It implements a generalized
+ * approach for translating simple text content using OpenAI's API.
+ * 
+ * The module is responsible for:
+ * - Formatting prompts for the AI model
+ * - Managing streaming responses and cancellation
+ * - Handling errors during translation
+ * - Supporting contextual information to improve translation quality
+ */
 
 import type OpenAI from 'openai';
 import type { ctxParamsType } from '../../entrypoints/Config/ConfigScreen';
 import { createLogger } from '../logging/Logger';
 
+/**
+ * Interface for handling streaming responses during translation
+ * 
+ * @interface StreamCallbacks
+ * @property {Function} onStream - Handler for incremental translation results
+ * @property {Function} onComplete - Handler called when translation completes
+ * @property {Function} checkCancellation - Function to check if translation should be cancelled
+ * @property {AbortSignal} abortSignal - Signal for aborting the API request
+ */
 type StreamCallbacks = {
   onStream?: (chunk: string) => void;
   onComplete?: () => void;
@@ -16,7 +33,21 @@ type StreamCallbacks = {
 };
 
 /**
- * Translates a simple text field value using OpenAI.
+ * Translates a basic text field value using OpenAI's language model
+ * 
+ * This function handles the translation of simple text-based field types by
+ * constructing an appropriate prompt, sending it to OpenAI, and handling the
+ * streamed response. It supports providing record context for improved translation
+ * accuracy and offers streaming callbacks for UI updates.
+ * 
+ * @param {unknown} fieldValue - The value to translate (typically a string)
+ * @param {ctxParamsType} pluginParams - Configuration parameters for the plugin
+ * @param {string} toLocale - Target locale code
+ * @param {string} fromLocale - Source locale code
+ * @param {OpenAI} openai - OpenAI client instance
+ * @param {StreamCallbacks} streamCallbacks - Optional callbacks for streaming translation updates
+ * @param {string} recordContext - Additional context about the record being translated
+ * @returns {Promise<unknown>} - The translated text
  */
 export async function translateDefaultFieldValue(
   fieldValue: unknown,
@@ -93,7 +124,15 @@ export async function translateDefaultFieldValue(
 }
 
 /**
- * Function to check if streamCallbacks is provided and valid
+ * Type guard to verify if a provided object is a valid StreamCallbacks instance
+ * 
+ * This utility function helps validate that a given object conforms to the
+ * StreamCallbacks interface before attempting to use its methods. It performs
+ * runtime type checking to ensure the callback functions exist and are of the
+ * correct type.
+ * 
+ * @param {unknown} callbacks - The object to check
+ * @returns {boolean} - True if the object is a valid StreamCallbacks instance
  */
 export function isValidStreamCallbacks(callbacks: unknown): callbacks is { onStream?: (chunk: string) => void; onComplete?: () => void; checkCancellation?: () => boolean; abortSignal?: AbortSignal } {
   if (!callbacks) return false;

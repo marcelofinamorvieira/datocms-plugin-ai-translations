@@ -1,27 +1,49 @@
-// FileFieldTranslation.ts
-// ------------------------------------------------------
-// This file handles translation of metadata associated with file fields,
-// such as alt text, title, or other custom metadata fields.
+/**
+ * FileFieldTranslation.ts
+ * ------------------------------------------------------
+ * This module handles translation of metadata associated with file fields in DatoCMS,
+ * such as alt text, title, and other custom metadata fields that may be attached
+ * to file uploads. It supports both single file fields and gallery (array of files) fields.
+ * 
+ * The module provides functionality to:
+ * - Extract translatable metadata from file objects
+ * - Process both single files and galleries (collections of files)
+ * - Preserve file structure while updating only the relevant metadata
+ * - Stream translation progress back to the UI
+ */
 
 import type OpenAI from 'openai';
 import type { ctxParamsType } from '../../entrypoints/Config/ConfigScreen';
 import { createLogger } from '../logging/Logger';
 
+/**
+ * Interface for streaming translation updates to the UI
+ * 
+ * @interface StreamCallbacks
+ * @property {Function} onStream - Callback for incremental translation updates
+ * @property {Function} onComplete - Callback when translation is complete
+ */
 type StreamCallbacks = {
   onStream?: (chunk: string) => void;
   onComplete?: () => void;
 };
 
 /**
- * Translates metadata for file and gallery fields.
- * @param fieldValue - the file or gallery field data.
- * @param pluginParams - plugin parameters for model configuration.
- * @param toLocale - target locale code.
- * @param fromLocale - source locale code.
- * @param openai - instance of OpenAI client.
- * @param streamCallbacks - optional stream callbacks for handling translation progress.
- * @param recordContext - optional context from the record to aid translation.
- * @returns updated file field data with translated metadata.
+ * Translates metadata for file and gallery fields
+ * 
+ * This function handles both single file fields and gallery fields (arrays of files).
+ * It extracts the metadata from each file object, translates text-based metadata fields,
+ * and reconstructs the file objects with the translated metadata while preserving
+ * other properties like URLs, dimensions, etc.
+ * 
+ * @param {unknown} fieldValue - The file or gallery field data to translate
+ * @param {ctxParamsType} pluginParams - Plugin configuration parameters
+ * @param {string} toLocale - Target locale code for translation
+ * @param {string} fromLocale - Source locale code for translation
+ * @param {OpenAI} openai - Instance of OpenAI client for translation
+ * @param {StreamCallbacks} streamCallbacks - Optional callbacks for streaming progress updates
+ * @param {string} recordContext - Optional context about the record to improve translation quality
+ * @returns {Promise<unknown>} - Updated file field data with translated metadata
  */
 export async function translateFileFieldValue(
   fieldValue: unknown,
@@ -82,7 +104,21 @@ export async function translateFileFieldValue(
 }
 
 /**
- * Translates a single file field metadata
+ * Translates metadata for a single file object
+ * 
+ * This function extracts text-based metadata fields from a file object,
+ * translates them using OpenAI, and then merges the translated metadata
+ * back into the original file object, preserving all non-metadata properties.
+ * It only translates string-type metadata values, leaving other types untouched.
+ * 
+ * @param {unknown} fileValue - The file object containing metadata to translate
+ * @param {ctxParamsType} pluginParams - Plugin configuration parameters
+ * @param {string} toLocale - Target locale code for translation
+ * @param {string} fromLocale - Source locale code for translation
+ * @param {OpenAI} openai - Instance of OpenAI client for translation
+ * @param {StreamCallbacks} streamCallbacks - Optional callbacks for streaming progress updates
+ * @param {string} recordContext - Optional context about the record to improve translation quality
+ * @returns {Promise<unknown>} - Updated file object with translated metadata
  */
 async function translateSingleFileMetadata(
   fileValue: unknown,

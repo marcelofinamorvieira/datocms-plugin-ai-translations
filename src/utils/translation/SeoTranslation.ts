@@ -1,28 +1,50 @@
-// SeoTranslation.ts
-// ------------------------------------------------------
-// This file focuses on translating SEO fields, which are objects
-// typically containing title and description, plus optional image metadata.
+/**
+ * SeoTranslation.ts
+ * ------------------------------------------------------
+ * This module handles the translation of SEO field values in DatoCMS.
+ * SEO fields are structured objects that typically contain title and
+ * description properties, which need specialized handling during translation
+ * to maintain their structure while updating their content.
+ * 
+ * The module provides functionality to:
+ * - Parse SEO field objects
+ * - Maintain field structure during translation
+ * - Format localized SEO content for better user experience
+ */
 
 import type OpenAI from 'openai';
 import locale from 'locale-codes';
 import type { ctxParamsType } from '../../entrypoints/Config/ConfigScreen';
 
+/**
+ * Interface for handling streaming translation updates
+ * 
+ * @interface StreamCallbacks
+ * @property {Function} onStream - Callback for incremental translation updates
+ * @property {Function} onComplete - Callback for when translation is complete
+ */
 type StreamCallbacks = {
   onStream?: (chunk: string) => void;
   onComplete?: () => void;
 };
 
 /**
- * Translates an SEO field value, which usually contains title/description.
- * @param fieldValue - the SEO data object.
- * @param pluginParams - plugin parameters for the model configuration.
- * @param toLocale - target locale for translation.
- * @param fromLocale - source locale for translation.
- * @param openai - OpenAI client instance.
- * @param fieldTypePrompt - additional instructions for formatting.
- * @param streamCallbacks - optional stream callbacks for handling translation progress.
- * @param recordContext - optional context from the record to aid translation.
- * @returns the updated SEO object with translated title/description.
+ * Translates SEO field values while preserving their object structure
+ * 
+ * This function extracts the title and description from an SEO object,
+ * translates them using OpenAI, and reconstructs the object with the
+ * translated values. It handles streaming updates for UI feedback and
+ * uses record context to improve translation quality when available.
+ *
+ * @param {unknown} fieldValue - The SEO field object to translate
+ * @param {ctxParamsType} pluginParams - Plugin configuration parameters
+ * @param {string} toLocale - Target locale code for translation
+ * @param {string} fromLocale - Source locale code for translation
+ * @param {OpenAI} openai - OpenAI client instance
+ * @param {string} fieldTypePrompt - Additional prompt for SEO format instructions
+ * @param {StreamCallbacks} streamCallbacks - Optional callbacks for streaming updates
+ * @param {string} recordContext - Optional context about the record being translated
+ * @returns {Promise<unknown>} - The translated SEO object
  */
 export async function translateSeoFieldValue(
   fieldValue: unknown,
