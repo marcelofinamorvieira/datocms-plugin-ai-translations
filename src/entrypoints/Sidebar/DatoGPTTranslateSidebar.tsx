@@ -1,7 +1,7 @@
-import { RenderItemFormSidebarPanelCtx } from 'datocms-plugin-sdk';
+import type { RenderItemFormSidebarPanelCtx } from 'datocms-plugin-sdk';
 import { Button, Canvas, SelectField } from 'datocms-react-ui';
 import { useState, useEffect } from 'react';
-import { ctxParamsType } from '../Config/ConfigScreen';
+import type { ctxParamsType } from '../Config/ConfigScreen';
 import { motion, AnimatePresence } from 'framer-motion';
 import { translateRecordFields } from '../../utils/translateRecordFields';
 import { ChatBubble } from './Components/ChatbubbleTranslate';
@@ -120,7 +120,7 @@ export default function DatoGPTTranslateSidebar({ ctx }: PropTypes) {
             buttonType="muted"
             onClick={() =>
               ctx.navigateTo(
-                '/configuration/plugins/' + ctx.plugin.id + '/edit'
+                `/configuration/plugins/${ctx.plugin.id}/edit`
               )
             }
           >
@@ -178,9 +178,9 @@ export default function DatoGPTTranslateSidebar({ ctx }: PropTypes) {
       ctx.notice('All fields translated successfully');
       setShowTimer(true);
       setProgress(100);
-    } catch (error: any) {
+    } catch (error) {
       ctx.alert(
-        error.message || 'An unknown error occurred during translation'
+        (error as Error).message || 'An unknown error occurred during translation'
       );
       setIsLoading(false);
     }
@@ -299,19 +299,28 @@ export default function DatoGPTTranslateSidebar({ ctx }: PropTypes) {
               }}
             >
               {translationBubbles.map((bubble, index) => (
-                <div
-                  key={index}
+                <button
+                  key={`${bubble.fieldPath}-${bubble.locale}`}
                   onClick={() => {
                     ctx.scrollToField(bubble.fieldPath, bubble.locale);
                   }}
+                  style={{
+                    background: 'none',
+                    border: 'none',
+                    padding: 0,
+                    width: '100%',
+                    cursor: 'pointer',
+                    textAlign: 'left'
+                  }}
+                  type="button"
                 >
                   <ChatBubble
-                    key={index}
+                    key={`chat-${bubble.fieldPath}-${bubble.locale}`}
                     index={index}
                     bubble={bubble}
                     theme={ctx.theme}
                   />
-                </div>
+                </button>
               ))}
               {showTimer && (
                 <div>

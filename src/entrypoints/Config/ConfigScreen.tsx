@@ -257,7 +257,7 @@ export default function ConfigScreen({ ctx }: { ctx: RenderConfigScreenCtx }) {
         });
       }
     }
-  }, [ctx.itemTypes]);
+  }, [ctx.itemTypes, apiKey, ctx.loadItemTypeFields]);
 
   useEffect(() => {
     if (apiKey) {
@@ -326,11 +326,11 @@ export default function ConfigScreen({ ctx }: { ctx: RenderConfigScreenCtx }) {
   const [roles, setRoles] = useState<{ id: string; name: string }[]>([]);
 
   useEffect(() => {
-    const client = buildClient({ apiToken: ctx.currentUserAccessToken! });
+    const client = buildClient({ apiToken: ctx.currentUserAccessToken as string });
     client.roles.list().then((roles) => {
       setRoles(roles.map((role) => ({ id: role.id, name: role.name })));
     });
-  }, []);
+  }, [ctx.currentUserAccessToken]);
 
   return (
     // Canvas is a Datocms React UI wrapper for consistent styling
@@ -377,15 +377,16 @@ export default function ConfigScreen({ ctx }: { ctx: RenderConfigScreenCtx }) {
                   ))}
               </DropdownMenu>
             </Dropdown>
-            <span
+            <button
               onClick={() => {
                 setGptModel('gpt-4o-mini');
                 ctx.notice('Selected gpt-4o-mini');
               }}
               className={s.tooltipConfig}
+              type="button"
             >
               Using gpt-4o-mini is recommended
-            </span>
+            </button>
           </div>
         </div>
 
@@ -538,6 +539,7 @@ export default function ConfigScreen({ ctx }: { ctx: RenderConfigScreenCtx }) {
           <label
             className={s.label}
             style={{ display: 'flex', alignItems: 'center' }}
+            htmlFor="translation-prompt"
           >
             Translation prompt*
             {/* Tooltip container to show the info text on hover */}
@@ -558,6 +560,8 @@ export default function ConfigScreen({ ctx }: { ctx: RenderConfigScreenCtx }) {
             placeholder="Enter your prompt here"
             value={prompt}
             onChange={(e) => setPrompt(e.target.value)}
+            id="translation-prompt"
+            aria-labelledby="translation-prompt"
           />
         </div>
 

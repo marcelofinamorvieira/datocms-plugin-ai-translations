@@ -1,7 +1,7 @@
-import { RenderItemFormSidebarPanelCtx } from 'datocms-plugin-sdk';
+import type { RenderItemFormSidebarPanelCtx } from 'datocms-plugin-sdk';
 import OpenAI from 'openai';
 import {
-  ctxParamsType,
+  type ctxParamsType,
   modularContentVariations,
 } from '../entrypoints/Config/ConfigScreen';
 import { fieldPrompt } from '../prompts/FieldPrompts';
@@ -42,7 +42,7 @@ type TranslateOptions = {
 };
 
 interface LocalizedField {
-  [locale: string]: any;
+  [locale: string]: unknown;
 }
 
 export async function translateRecordFields(
@@ -68,8 +68,12 @@ export async function translateRecordFields(
   );
 
   for (const field of fieldsArray) {
-    const fieldType = field!.attributes.appearance.editor;
-    const fieldValue = currentFormValues[field!.attributes.api_key];
+    if (!field || !field.attributes) {
+      continue; // Skip if field is undefined or doesn't have attributes
+    }
+    
+    const fieldType = field.attributes.appearance.editor;
+    const fieldValue = currentFormValues[field.attributes.api_key];
 
     // If field is not localized or doesn't have a value in the source locale, skip
     let isFieldTranslatable =
@@ -86,8 +90,8 @@ export async function translateRecordFields(
 
     if (
       !isFieldTranslatable ||
-      !field!.attributes.localized ||
-      pluginParams.apiKeysToBeExcludedFromThisPlugin.includes(field!.id)
+      !field.attributes.localized ||
+      pluginParams.apiKeysToBeExcludedFromThisPlugin.includes(field.id)
     )
       continue;
     if (
@@ -107,13 +111,13 @@ export async function translateRecordFields(
     //if the field is a localized modular content, and the source locale is empty, skip
     if (
       Array.isArray(sourceLocaleValue) &&
-      (sourceLocaleValue as any[]).length === 0
+      (sourceLocaleValue as unknown[]).length === 0
     ) {
       continue;
     }
 
     // Determine a simple field label for the UI
-    const fieldLabel = field!.attributes.label || field!.attributes.api_key;
+    const fieldLabel = field.attributes.label || field.attributes.api_key;
 
     // For each target locale, translate the field
     for (const locale of targetLocales) {
@@ -121,7 +125,7 @@ export async function translateRecordFields(
       options.onStart?.(
         fieldLabel,
         locale,
-        field!.attributes.api_key + '.' + locale
+        `${field.attributes.api_key}.${locale}`
       );
 
       // Determine field type prompt
@@ -155,14 +159,14 @@ export async function translateRecordFields(
         fieldType,
         openai,
         fieldTypePrompt,
-        ctx.currentUserAccessToken!,
-        field!.id,
+        ctx.currentUserAccessToken as string,
+        field.id,
         streamCallbacks
       );
 
       // Update form values with the translated field
       ctx.setFieldValue(
-        field!.attributes.api_key + '.' + locale,
+        `${field.attributes.api_key}.${locale}`,
         translatedFieldValue
       );
     }

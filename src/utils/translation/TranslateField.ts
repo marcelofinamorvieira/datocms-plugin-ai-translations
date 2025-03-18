@@ -5,9 +5,9 @@
 
 import OpenAI from 'openai';
 import { buildClient } from '@datocms/cma-client-browser';
-import { ExecuteFieldDropdownActionCtx } from 'datocms-plugin-sdk';
+import type { ExecuteFieldDropdownActionCtx } from 'datocms-plugin-sdk';
 import {
-  ctxParamsType,
+  type ctxParamsType,
   modularContentVariations,
 } from '../../entrypoints/Config/ConfigScreen';
 import { fieldPrompt } from '../../prompts/FieldPrompts';
@@ -115,11 +115,21 @@ export async function translateBlockValue(
   // Clean block array from any leftover item IDs
   const cleanedFieldValue = deleteItemIdKeys(
     !isFramedSingleBlock ? fieldValue : [fieldValue]
-  );
+  ) as BlockItem[];
+
+  // Define block type for proper type checking
+  type BlockItem = {
+    itemTypeId?: string;
+    blockModelId?: string;
+    originalIndex?: number;
+    type?: string;
+    children?: unknown;
+    [key: string]: unknown;
+  };
 
   const client = buildClient({ apiToken });
 
-  for (const block of cleanedFieldValue as any[]) {
+  for (const block of cleanedFieldValue) {
     // Determine the block model ID
     const blockModelId = block.itemTypeId || block.blockModelId;
     if (!blockModelId) continue;
@@ -215,7 +225,7 @@ const TranslateField = async (
     fieldType,
     newOpenai,
     fieldTypePrompt,
-    ctx.currentUserAccessToken!,
+    ctx.currentUserAccessToken as string,
     ctx.field.id,
     streamCallbacks
   );

@@ -7,14 +7,21 @@
 export function extractTextValues(data: unknown): string[] {
   const textValues: string[] = [];
 
-  function traverse(obj: any) {
+  // Define a recursive type for structured text nodes
+  type StructuredTextItem = {
+    text?: string;
+    [key: string]: unknown;
+  };
+
+  function traverse(obj: unknown) {
     if (Array.isArray(obj)) {
       obj.forEach(traverse);
     } else if (typeof obj === 'object' && obj !== null) {
-      if (obj.text !== undefined) {
-        textValues.push(obj.text);
+      const item = obj as StructuredTextItem;
+      if (item.text !== undefined) {
+        textValues.push(item.text);
       }
-      Object.values(obj).forEach(traverse);
+      Object.values(item).forEach(traverse);
     }
   }
 
@@ -27,16 +34,18 @@ export function extractTextValues(data: unknown): string[] {
  * which is useful when the API returns extraneous ID fields
  * that we need to strip out before re-uploading or patching.
  */
-export function removeIds(obj: unknown): any {
+export function removeIds(obj: unknown): unknown {
   if (Array.isArray(obj)) {
     return obj.map(removeIds);
-  } else if (typeof obj === 'object' && obj !== null) {
-    const newObj: any = {};
+  }
+  
+  if (typeof obj === 'object' && obj !== null) {
+    const newObj: Record<string, unknown> = {};
     for (const [key, value] of Object.entries(obj)) {
       // Keep id if it's in a meta array item with a value property
       if (
         key === 'id' &&
-        obj.hasOwnProperty('value') &&
+        (obj as Record<string, unknown>).value !== undefined &&
         Object.keys(obj).length === 2
       ) {
         newObj[key] = value;
@@ -46,6 +55,7 @@ export function removeIds(obj: unknown): any {
     }
     return newObj;
   }
+  
   return obj;
 }
 
@@ -60,18 +70,27 @@ export function removeIds(obj: unknown): any {
 export function reconstructObject(
   originalObject: unknown,
   textValues: string[]
-): any {
+): unknown {
   let index = 0;
-  function traverse(obj: any): any {
+  
+  type StructuredTextNode = {
+    text?: string;
+    [key: string]: unknown;
+  };
+
+  function traverse(obj: unknown): unknown {
     if (Array.isArray(obj)) {
       return obj.map((item) => traverse(item));
-    } else if (typeof obj === 'object' && obj !== null) {
-      const newObj: any = {};
-      for (const key in obj) {
+    }
+    
+    if (typeof obj === 'object' && obj !== null) {
+      const typedObj = obj as StructuredTextNode;
+      const newObj: Record<string, unknown> = {};
+      for (const key in typedObj) {
         if (key === 'text' && index < textValues.length) {
           newObj[key] = textValues[index++];
         } else {
-          newObj[key] = traverse(obj[key]);
+          newObj[key] = traverse(typedObj[key]);
         }
       }
       return newObj;
@@ -99,12 +118,14 @@ export function insertObjectAtIndex<T>(
  * @param obj The object to clean.
  * @returns A new object without 'itemId' fields.
  */
-export function deleteItemIdKeys(obj: any): any {
+export function deleteItemIdKeys(obj: unknown): unknown {
   if (Array.isArray(obj)) {
     return obj.map(deleteItemIdKeys);
-  } else if (typeof obj === 'object' && obj !== null) {
-    const newObj: any = {};
-    for (const [key, value] of Object.entries(obj)) {
+  }
+  
+  if (typeof obj === 'object' && obj !== null) {
+    const newObj: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(obj as Record<string, unknown>)) {
       if (key !== 'itemId') {
         newObj[key] = deleteItemIdKeys(value);
       }

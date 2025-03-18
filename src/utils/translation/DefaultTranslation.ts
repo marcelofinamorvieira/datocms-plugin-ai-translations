@@ -4,8 +4,8 @@
 // such as single_line, markdown, JSON, etc. It uses the
 // configured OpenAI model to translate from one locale to another.
 
-import OpenAI from 'openai';
-import { ctxParamsType } from '../../entrypoints/Config/ConfigScreen';
+import type OpenAI from 'openai';
+import type { ctxParamsType } from '../../entrypoints/Config/ConfigScreen';
 
 type StreamCallbacks = {
   onStream?: (chunk: string) => void;

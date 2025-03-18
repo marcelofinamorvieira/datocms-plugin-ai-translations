@@ -3,9 +3,9 @@
 // This file handles translations of file fields, which may include
 // metadata like alt text, title, etc.
 
-import OpenAI from 'openai';
+import type OpenAI from 'openai';
 import locale from 'locale-codes';
-import { ctxParamsType } from '../../entrypoints/Config/ConfigScreen';
+import type { ctxParamsType } from '../../entrypoints/Config/ConfigScreen';
 import { fieldPrompt } from '../../prompts/FieldPrompts';
 
 type StreamCallbacks = {
@@ -83,7 +83,7 @@ async function translateSingleFileObject(
     return fileValue;
   }
 
-  const fileObject = fileValue as Record<string, any>;
+  const fileObject = fileValue as Record<string, unknown>;
   const metadataToTranslate = {
     alt: fileObject.alt || '',
     title: fileObject.title || '',

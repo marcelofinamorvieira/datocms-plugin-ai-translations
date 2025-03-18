@@ -3,9 +3,9 @@
 // This file manages translations of structured text fields, including
 // extracting text nodes, translating block nodes, and reassembling.
 
-import OpenAI from 'openai';
+import type OpenAI from 'openai';
 import locale from 'locale-codes';
-import { ctxParamsType } from '../../entrypoints/Config/ConfigScreen';
+import type { ctxParamsType } from '../../entrypoints/Config/ConfigScreen';
 import { translateFieldValue } from './TranslateField';
 import {
   extractTextValues,
@@ -41,8 +41,20 @@ export async function translateStructuredTextValue(
 ): Promise<unknown> {
   const noIdFieldValue = removeIds(fieldValue);
 
-  const blockNodes = (noIdFieldValue as Array<unknown>).reduce(
-    (acc: any[], node: any, index: number) => {
+  // Define specific types for structured text nodes
+  type StructuredTextNode = {
+    type?: string;
+    [key: string]: unknown;
+  };
+
+  type BlockNode = StructuredTextNode & {
+    originalIndex: number;
+  };
+
+  const noIdFieldValueArray = noIdFieldValue as StructuredTextNode[];
+  
+  const blockNodes = noIdFieldValueArray.reduce<BlockNode[]>(
+    (acc, node, index) => {
       if (node?.type === 'block') {
         acc.push({ ...node, originalIndex: index });
       }
@@ -51,8 +63,8 @@ export async function translateStructuredTextValue(
     []
   );
 
-  const fieldValueWithoutBlocks = (noIdFieldValue as Array<unknown>).filter(
-    (node: any) => node?.type !== 'block'
+  const fieldValueWithoutBlocks = noIdFieldValueArray.filter(
+    (node: StructuredTextNode) => node?.type !== 'block'
   );
 
   const textValues = extractTextValues(fieldValueWithoutBlocks);
@@ -71,7 +83,7 @@ export async function translateStructuredTextValue(
     .replace('{fromLocale}', fromLocaleName)
     .replace('{toLocale}', toLocaleName);
 
-  prompt += `\nReturn the translated strings array in a valid JSON format. The number of returned strings should match the original. Do not trim any empty strings or spaces. Return just the array of strings, do not nest the array into an object.  The number of returned strings should match the original. Spaces and empty strings should remain unaltered. Do not remove any empty strings or spaces.`;
+  prompt += '\nReturn the translated strings array in a valid JSON format. The number of returned strings should match the original. Do not trim any empty strings or spaces. Return just the array of strings, do not nest the array into an object.  The number of returned strings should match the original. Spaces and empty strings should remain unaltered. Do not remove any empty strings or spaces.';
 
   try {
     let translatedText = '';
@@ -117,10 +129,10 @@ export async function translateStructuredTextValue(
         apiToken,
         '',
         streamCallbacks
-      );
-      for (const node of translatedBlockNodes as any[]) {
+      ) as BlockNode[];
+      for (const node of translatedBlockNodes) {
         finalReconstructedObject = insertObjectAtIndex(
-          finalReconstructedObject as any[],
+          finalReconstructedObject as StructuredTextNode[],
           node,
           node.originalIndex
         );
@@ -128,13 +140,13 @@ export async function translateStructuredTextValue(
     }
 
     // Remove temporary 'originalIndex' keys
-    const cleanedReconstructedObject = (finalReconstructedObject as any[]).map(
+    const cleanedReconstructedObject = (finalReconstructedObject as StructuredTextNode[]).map(
       ({
         originalIndex,
         ...rest
       }: {
         originalIndex?: number;
-        [key: string]: any;
+        [key: string]: unknown;
       }) => rest
     );
 

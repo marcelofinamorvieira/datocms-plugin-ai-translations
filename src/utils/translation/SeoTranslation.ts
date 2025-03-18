@@ -3,9 +3,9 @@
 // This file focuses on translating SEO fields, which are objects
 // typically containing title and description, plus optional image metadata.
 
-import OpenAI from 'openai';
+import type OpenAI from 'openai';
 import locale from 'locale-codes';
-import { ctxParamsType } from '../../entrypoints/Config/ConfigScreen';
+import type { ctxParamsType } from '../../entrypoints/Config/ConfigScreen';
 
 type StreamCallbacks = {
   onStream?: (chunk: string) => void;
@@ -32,7 +32,7 @@ export async function translateSeoFieldValue(
   fieldTypePrompt: string,
   streamCallbacks?: StreamCallbacks
 ): Promise<unknown> {
-  const seoObject = fieldValue as Record<string, string>;
+  const seoObject = fieldValue as Record<string, unknown>;
   const seoObjectToTranslate = {
     title: seoObject.title || '',
     description: seoObject.description || '',

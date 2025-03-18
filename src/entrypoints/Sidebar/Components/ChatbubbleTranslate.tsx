@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { AiOutlineOpenAI } from 'react-icons/ai';
 import { BsCheckCircleFill } from 'react-icons/bs';
-import { Theme } from 'datocms-plugin-sdk';
+import type { Theme } from 'datocms-plugin-sdk';
 import styles from '../../../styles.module.css';
 import locale from 'locale-codes';
 
@@ -72,7 +72,7 @@ export function ChatBubble({ bubble, theme }: Props) {
     if (!bubble.streamingContent) return '';
     const content = bubble.streamingContent.trim();
     if (content.length <= 100 || isHovered) return content;
-    return content.slice(-100) + '...';
+    return `${content.slice(-100)}...`;
   }, [bubble.streamingContent, isHovered]);
 
   // Variants for framer-motion to animate bubble appearance and transitions
@@ -143,7 +143,7 @@ export function ChatBubble({ bubble, theme }: Props) {
           transition: {
             duration: 1,
             ease: 'linear',
-            repeat: Infinity,
+            repeat: Number.POSITIVE_INFINITY,
           },
         }
       : {

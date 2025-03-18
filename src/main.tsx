@@ -8,24 +8,23 @@
 
 import {
   connect,
-  DropdownAction,
-  DropdownActionGroup,
-  ExecuteFieldDropdownActionCtx,
-  FieldDropdownActionsCtx,
-  ItemFormSidebarPanelsCtx,
-  ItemType,
-  RenderFieldExtensionCtx,
-  RenderItemFormSidebarPanelCtx,
+  type DropdownAction,
+  type DropdownActionGroup,
+  type ExecuteFieldDropdownActionCtx,
+  type FieldDropdownActionsCtx,
+  type ItemFormSidebarPanelsCtx,
+  type ItemType,
+  type RenderFieldExtensionCtx,
+  type RenderItemFormSidebarPanelCtx,
 } from 'datocms-plugin-sdk';
 import 'datocms-react-ui/styles.css';
 import ConfigScreen, {
-  ctxParamsType,
+  type ctxParamsType,
   modularContentVariations,
   translateFieldTypes,
 } from './entrypoints/Config/ConfigScreen';
 import { render } from './utils/render';
 import locale from 'locale-codes';
-// Import the newly refactored translation function
 import TranslateField from './utils/translation/TranslateField';
 import DatoGPTTranslateSidebar from './entrypoints/Sidebar/DatoGPTTranslateSidebar';
 import { Button, Canvas } from 'datocms-react-ui';
@@ -40,10 +39,16 @@ const localeSelect = locale.getByTag;
  * @param path - dot/bracket string path
  * @returns the located value if any
  */
-function getValueAtPath(obj: any, path: string): any {
-  return path.split('.').reduce((acc: any, key: string) => {
+function getValueAtPath(obj: unknown, path: string): unknown {
+  return path.split('.').reduce((acc: unknown, key: string) => {
+    if (acc === null || acc === undefined || typeof acc !== 'object') {
+      return undefined;
+    }
+    
     const index = Number(key);
-    return Number.isNaN(index) ? acc?.[key] : acc?.[index];
+    return Number.isNaN(index) 
+      ? (acc as Record<string, unknown>)[key] 
+      : (acc as unknown[])[index];
   }, obj);
 }
 
@@ -257,7 +262,7 @@ connect({
     const fieldType = ctx.field.attributes.appearance.editor;
 
     // Attempt to get field value from form values
-    let fieldValue =
+    const fieldValue =
       ctx.formValues[ctx.field.attributes.api_key] ||
       (ctx.parentField?.attributes.localized &&
         getValueAtPath(ctx.formValues, ctx.fieldPath));

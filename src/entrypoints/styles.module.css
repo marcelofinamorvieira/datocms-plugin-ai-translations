@@ -154,7 +154,10 @@
 }
 
 .warningTooltip {
-  composes: tooltipContainer;
+  position: relative;
+  display: inline-block;
+  cursor: help;
+  margin-left: 8px;
   color: #faad14;
 }
 
@@ -178,6 +181,12 @@
 }
 
 .tooltipContainer:hover .tooltipText {
+  visibility: visible;
+  opacity: 1;
+}
+
+/* Added selector for warningTooltip hover */
+.warningTooltip:hover .tooltipText {
   visibility: visible;
   opacity: 1;
 }
