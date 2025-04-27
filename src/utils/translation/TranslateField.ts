@@ -295,6 +295,7 @@ async function TranslateField(
   // Create OpenAI client instance
   const openai = new OpenAI({
     apiKey: pluginParams.apiKey,
+    dangerouslyAllowBrowser: true,
   });
 
   try {

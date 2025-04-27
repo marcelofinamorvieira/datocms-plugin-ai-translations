@@ -400,13 +400,19 @@ connect({
         }...`,
         dismissAfterTimeout: true,
       });
-      await TranslateField(
+      const translatedValue = await TranslateField(
         fieldValueInSourceLocale,
         ctx,
         pluginParams,
         ctx.locale,
         locale,
         fieldType
+      );
+
+      // Persist translated value into the current editing locale
+      await ctx.setFieldValue(
+        `${ctx.field.attributes.api_key}.${ctx.locale}`,
+        translatedValue
       );
       ctx.notice(
         `Translated "${ctx.field.attributes.label}" from ${
@@ -430,13 +436,18 @@ connect({
         });
         for (const loc of locales) {
           if (loc === ctx.locale) continue;
-          await TranslateField(
+          const translatedValue = await TranslateField(
             (fieldValue as Record<string, unknown>)?.[ctx.locale],
             ctx,
             pluginParams,
             loc,
             ctx.locale,
             fieldType
+          );
+
+          await ctx.setFieldValue(
+            `${ctx.field.attributes.api_key}.${loc}`,
+            translatedValue
           );
         }
         ctx.notice(`Translated "${ctx.field.attributes.label}" to all locales`);
@@ -452,13 +463,18 @@ connect({
         }...`,
       });
 
-      await TranslateField(
+      const translatedValue = await TranslateField(
         (fieldValue as Record<string, unknown>)?.[ctx.locale],
         ctx,
         pluginParams,
         locale,
         ctx.locale,
         fieldType
+      );
+
+      await ctx.setFieldValue(
+        `${ctx.field.attributes.api_key}.${locale}`,
+        translatedValue
       );
       ctx.notice(
         `Translated "${ctx.field.attributes.label}" to ${
