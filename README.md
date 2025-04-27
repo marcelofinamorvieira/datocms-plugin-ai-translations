@@ -15,10 +15,15 @@ See the [CHANGELOG.md](./CHANGELOG.md) file for details about all the latest fea
 On the plugin's Settings screen:
 
 1. **OpenAI API Key**: Paste a valid OpenAI API key. The plugin uses this key for translation requests.
-2. **GPT Model**: Select one of the available GPT-based models. Using gpt-4o-mini is recomended.
+2. **GPT Model**: Select one of the available GPT-based models. Only GPT-4.1 and GPT-4o variants are permitted.
+    - mini: Balanced cost (~$0.02/$0.04) & quality.
+    - nano: Fastest & cheapest (~$0.01/$0.02), lower nuance.
+    - normal: Highest fidelity (~$0.03/$0.06), higher latency & cost.
 3. **Translatable Field Types**: Pick which field editor types (single_line, markdown, structured_text, etc.) can be translated.
 4. **Translate Whole Record**: Decide if you want the sidebar feature that allows users to translate every localized field in the record at once.
 5. **Prompt Template**: Customize how translations are requested. The plugin uses placeholders like `{fieldValue}`, `{fromLocale}`, `{toLocale}`, and `{recordContext}`.
+
+_**Models**_: To ensure optimal translation quality, latency, and cost predictability, only GPT-4.1 and GPT-4o families are supported. These models balance fidelity, speed, and price for translation workflows.
 
 Save your changes. The plugin is now ready.
 

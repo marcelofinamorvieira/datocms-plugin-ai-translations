@@ -80,8 +80,25 @@ async function fetchAvailableModels(
     // Fetch the list of all available models
     const list = await openai.models.list();
 
-    // Map each model object to its ID and store in the component state
-    setOptions(list.data.map((option) => option.id));
+    // Only allow base models: gpt-4.1, gpt-4.1-mini, gpt-4.1-nano, gpt-4o, gpt-4o-mini, gpt-4o-nano
+    const allowedBaseModels = [
+      'gpt-4.1',
+      'gpt-4.1-mini',
+      'gpt-4.1-nano',
+      'gpt-4o',
+      'gpt-4o-mini',
+    ];
+    // Sort in quality/price order: normal, mini, nano (4.1 first, then 4o)
+    const order = [
+      'gpt-4.1',
+      'gpt-4.1-mini',
+      'gpt-4.1-nano',
+      'gpt-4o',
+      'gpt-4o-mini',
+    ];
+    setOptions(
+      order.filter((id) => list.data.map((option) => option.id).includes(id))
+    );
   } catch (error) {
     console.error('Error fetching OpenAI models:', error);
     // If an error occurs, notify the user that we failed to fetch model list
@@ -156,7 +173,7 @@ export default function ConfigScreen({ ctx }: { ctx: RenderConfigScreenCtx }) {
 
   // Local state for the selected GPT model
   const [gptModel, setGptModel] = useState(
-    pluginParams.gptModel ?? 'gpt-4o-mini'
+    pluginParams.gptModel ?? 'gpt-4.1-mini'
   );
 
   // Local state for which field types can be translated
@@ -363,6 +380,15 @@ export default function ConfigScreen({ ctx }: { ctx: RenderConfigScreenCtx }) {
         {/* GPT Model dropdown selector */}
         <div className={s.dropdownLabel}>
           <span className={s.label}>GPT Model*</span>
+          <span className={s.tooltipContainer}>
+            ⓘ
+            <span className={s.tooltipText}>
+              <b>Allowed:</b> GPT-4.1 & GPT-4o<br/>
+              <b>normal</b>: highest quality<br/>
+              <b>mini</b>: best balance<br/>
+              <b>nano</b>: fastest, cheapest
+            </span>
+          </span>
           <div className={s.modelSelect}>
             <Dropdown
               renderTrigger={({ open, onClick }) => (
@@ -379,7 +405,23 @@ export default function ConfigScreen({ ctx }: { ctx: RenderConfigScreenCtx }) {
                   <DropdownOption>{listOfModels[0]}</DropdownOption>
                 )}
                 {listOfModels
-                  .filter((model) => model.toLowerCase().includes('gpt'))
+                  .filter((model) => [
+                    'gpt-4.1',
+                    'gpt-4.1-mini',
+                    'gpt-4.1-nano',
+                    'gpt-4o',
+                    'gpt-4o-mini',
+                  ].includes(model))
+                  .sort((a, b) => {
+                    const order = [
+                      'gpt-4.1',
+                      'gpt-4.1-mini',
+                      'gpt-4.1-nano',
+                      'gpt-4o',
+                      'gpt-4o-mini',
+                    ];
+                    return order.indexOf(a) - order.indexOf(b);
+                  })
                   .map((model) => (
                     <DropdownOption
                       key={model}
@@ -392,13 +434,13 @@ export default function ConfigScreen({ ctx }: { ctx: RenderConfigScreenCtx }) {
             </Dropdown>
             <button
               onClick={() => {
-                setGptModel('gpt-4o-mini');
-                ctx.notice('Selected gpt-4o-mini');
+                setGptModel('gpt-4.1-mini');
+                ctx.notice('Selected gpt-4.1-mini');
               }}
               className={s.tooltipConfig}
               type="button"
             >
-              Using gpt-4o-mini is recommended
+              Using gpt-4.1-mini is recommended
             </button>
           </div>
         </div>
@@ -450,7 +492,7 @@ export default function ConfigScreen({ ctx }: { ctx: RenderConfigScreenCtx }) {
             />
             {/* Tooltip container styled like the translation prompt tooltip */}
             <div className={s.tooltipContainer}>
-              &#9432;
+              ⓘ
               <div className={s.tooltipText}>
                 When enabled, detailed logs of translation requests and responses will be displayed in the browser console.
                 This helps with troubleshooting and understanding how the plugin processes content.
@@ -473,7 +515,7 @@ export default function ConfigScreen({ ctx }: { ctx: RenderConfigScreenCtx }) {
           />
           {hasExclusionRules && (
             <div className={s.warningTooltip}>
-              &#9432;
+              ⓘ
               <div className={s.tooltipText}>
                 There are exclusion rules present. If the plugin is not being
                 displayed in a model or field where you expect it, please review
@@ -578,7 +620,7 @@ export default function ConfigScreen({ ctx }: { ctx: RenderConfigScreenCtx }) {
             Translation prompt*
             {/* Tooltip container to show the info text on hover */}
             <div className={s.tooltipContainer}>
-              &#9432;
+              ⓘ
               {/* Actual tooltip text that appears on hover */}
               <div className={s.tooltipText}>
                 Use &#123;fieldValue&#125;, &#123;fromLocale&#125;, and
@@ -615,7 +657,7 @@ export default function ConfigScreen({ ctx }: { ctx: RenderConfigScreenCtx }) {
             }
             buttonType="muted"
             onClick={() => {
-              setGptModel('gpt-4o-mini');
+              setGptModel('gpt-4.1-mini');
               setTranslationFields(Object.keys(translateFieldTypes));
               setTranslateWholeRecord(true);
               setPrompt(defaultPrompt);
