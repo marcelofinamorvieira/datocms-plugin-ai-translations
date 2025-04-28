@@ -80,14 +80,6 @@ async function fetchAvailableModels(
     // Fetch the list of all available models
     const list = await openai.models.list();
 
-    // Only allow base models: gpt-4.1, gpt-4.1-mini, gpt-4.1-nano, gpt-4o, gpt-4o-mini, gpt-4o-nano
-    const allowedBaseModels = [
-      'gpt-4.1',
-      'gpt-4.1-mini',
-      'gpt-4.1-nano',
-      'gpt-4o',
-      'gpt-4o-mini',
-    ];
     // Sort in quality/price order: normal, mini, nano (4.1 first, then 4o)
     const order = [
       'gpt-4.1',
