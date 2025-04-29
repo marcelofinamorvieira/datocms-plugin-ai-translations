@@ -98,7 +98,7 @@ function ensureArrayLengthsMatch(originalValues: string[], translatedValues: str
  * @returns {Promise<unknown>} - The translated structured text value
  */
 export async function translateStructuredTextValue(
-  fieldValue: unknown,
+  initialValue: unknown,
   pluginParams: ctxParamsType,
   toLocale: string,
   fromLocale: string,
@@ -109,9 +109,17 @@ export async function translateStructuredTextValue(
 ): Promise<unknown> {
   // Create logger
   const logger = createLogger(pluginParams, 'StructuredTextTranslation');
+  
+  let fieldValue = initialValue;
+  let isAPIResponse = false;
+
+  if((fieldValue as { document: { children: unknown[] } })?.document?.children?.length) {
+    fieldValue = (fieldValue as { document: { children: unknown[] } })?.document?.children
+    isAPIResponse = true
+  }
 
   // Skip translation if null or not an array
-  if (!fieldValue || !Array.isArray(fieldValue)) {
+  if (!fieldValue || (!Array.isArray(fieldValue) || fieldValue.length === 0)) {
     logger.info('Invalid structured text value', fieldValue);
     return fieldValue;
   }
@@ -279,6 +287,16 @@ IMPORTANT: Your response must be a valid JSON array of strings with EXACTLY ${te
       const cleanedReconstructedObject = (finalReconstructedObject as StructuredTextNode[]).map(
         ({ originalIndex, ...rest }) => rest
       );
+
+      if(isAPIResponse) {
+        return {
+          document: {
+            children: cleanedReconstructedObject,
+            type: "root"
+          },
+          schema: "dast"
+        }
+      }
 
       logger.info('Successfully translated structured text');
       return cleanedReconstructedObject;

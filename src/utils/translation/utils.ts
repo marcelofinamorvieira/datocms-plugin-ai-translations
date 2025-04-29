@@ -4,12 +4,17 @@
  * Recursively extracts all text values from a nested structure,
  * commonly used with structured text fields.
  */
+/**
+ * Recursively extracts all text values from a nested structure,
+ * commonly used with structured text fields.
+ */
 export function extractTextValues(data: unknown): string[] {
   const textValues: string[] = [];
 
   // Define a recursive type for structured text nodes
   type StructuredTextItem = {
     text?: string;
+    value?: string;
     [key: string]: unknown;
   };
 
@@ -20,6 +25,8 @@ export function extractTextValues(data: unknown): string[] {
       const item = obj as StructuredTextItem;
       if (item.text !== undefined) {
         textValues.push(item.text);
+      } else if (item.value !== undefined && typeof item.value === 'string') {
+        textValues.push(item.value);
       }
       Object.values(item).forEach(traverse);
     }
@@ -43,6 +50,10 @@ export function removeIds(obj: unknown): unknown {
     const newObj: Record<string, unknown> = {};
     for (const [key, value] of Object.entries(obj)) {
       // Keep id if it's in a meta array item with a value property
+      if(key === "data"){
+        newObj[key] = value;
+        continue;
+      }
       if (
         key === 'id' &&
         (obj as Record<string, unknown>).value !== undefined &&
@@ -75,6 +86,7 @@ export function reconstructObject(
   
   type StructuredTextNode = {
     text?: string;
+    value?: string;
     [key: string]: unknown;
   };
 
@@ -87,7 +99,7 @@ export function reconstructObject(
       const typedObj = obj as StructuredTextNode;
       const newObj: Record<string, unknown> = {};
       for (const key in typedObj) {
-        if (key === 'text' && index < textValues.length) {
+        if ((key === 'text' || (key === 'value' && typeof typedObj[key] === 'string')) && index < textValues.length) {
           newObj[key] = textValues[index++];
         } else {
           newObj[key] = traverse(typedObj[key]);
@@ -126,7 +138,11 @@ export function deleteItemIdKeys(obj: unknown): unknown {
   if (typeof obj === 'object' && obj !== null) {
     const newObj: Record<string, unknown> = {};
     for (const [key, value] of Object.entries(obj as Record<string, unknown>)) {
-      if (key !== 'itemId') {
+      if(key === 'data') {
+        newObj[key] = value;
+        continue;
+      }
+      if (key !== 'itemId' && key !== 'id') {
         newObj[key] = deleteItemIdKeys(value);
       }
     }

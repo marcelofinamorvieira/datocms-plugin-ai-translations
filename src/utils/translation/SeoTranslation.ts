@@ -15,6 +15,7 @@
 import type OpenAI from 'openai';
 import locale from 'locale-codes';
 import type { ctxParamsType } from '../../entrypoints/Config/ConfigScreen';
+import { createLogger } from '../logging/Logger';
 
 /**
  * Interface for handling streaming translation updates
@@ -56,16 +57,23 @@ export async function translateSeoFieldValue(
   streamCallbacks?: StreamCallbacks,
   recordContext = ''
 ): Promise<unknown> {
+  const logger = createLogger(pluginParams, 'translateSeoFieldValue');
+  logger.info('Starting SEO field translation', { fromLocale, toLocale });
+  
   const seoObject = fieldValue as Record<string, unknown>;
   const seoObjectToTranslate = {
     title: seoObject.title || '',
     description: seoObject.description || '',
   };
+  
+  logger.info('SEO object to translate', seoObjectToTranslate);
 
   try {
     // Extract language names for better prompt clarity
     const fromLocaleName = locale.getByTag(fromLocale)?.name || fromLocale;
     const toLocaleName = locale.getByTag(toLocale)?.name || toLocale;
+    
+    logger.info(`Translating from ${fromLocaleName} to ${toLocaleName}`);
 
     // Base prompt with replaceable placeholders
     const prompt = (pluginParams.prompt || '')
@@ -74,10 +82,14 @@ export async function translateSeoFieldValue(
       .replace('{toLocale}', toLocaleName)
       .replace('{recordContext}', recordContext || 'Record context: No additional context available.');
 
-    // Using template literal instead of string concatenation as per linting rules
+    // Using template literal as per linting rules
     const formattedPrompt = `${prompt}\n${fieldTypePrompt}`;
+    logger.info('Formatted prompt prepared for translation');
+
+    console.log(formattedPrompt)
 
     let translatedText = '';
+    logger.info('Initiating OpenAI stream for translation');
     const stream = await openai.chat.completions.create({
       messages: [{ role: 'user', content: formattedPrompt }],
       model: pluginParams.gptModel,
@@ -96,16 +108,20 @@ export async function translateSeoFieldValue(
       streamCallbacks.onComplete();
     }
 
+    logger.info(`Received translated text with length ${translatedText.length}`);
+
     // Parse the returned object
     const returnedSeoObject = JSON.parse(translatedText || '{}');
+    logger.info('Successfully parsed translated SEO object');
 
     // Update the original seoObject
     seoObject.title = returnedSeoObject.title || seoObject.title;
     seoObject.description = returnedSeoObject.description || seoObject.description;
-
+    
+    logger.info('SEO translation completed successfully');
     return seoObject;
   } catch (error) {
-    console.error('Translation error:', error);
+    logger.error('SEO translation error:', error instanceof Error ? error.message : String(error));
     throw error;
   }
 }

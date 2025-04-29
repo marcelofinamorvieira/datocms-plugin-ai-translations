@@ -203,8 +203,12 @@ async function translateBlockValue(
 
   for (const block of cleanedFieldValue) {
     // Determine the block model ID
-    const blockModelId = block.itemTypeId || block.blockModelId;
-    if (!blockModelId) continue;
+    // biome-ignore lint/suspicious/noExplicitAny: <i need to type blocks here>
+    const blockModelId = block.itemTypeId || block.blockModelId || (block as any)?.relationships?.item_type?.data?.id ||(block as any)?.item?.relationships?.item_type?.data?.id;
+    if (!blockModelId) {
+      logger.warning('Block model ID not found', block);
+      continue;
+    }
 
     // Fetch fields for this specific block
     const fields = await client.fields.list(blockModelId as string);
@@ -217,46 +221,65 @@ async function translateBlockValue(
     }, {} as Record<string, { editor: string; id: string }>);
 
     // Translate each field within the block
-    for (const field in block) {
-      if (
-        field === 'itemTypeId' ||
-        field === 'originalIndex' ||
-        field === 'blockModelId' ||
-        field === 'type' ||
-        field === 'children'
-      ) {
-        continue;
-      }
+    if (block.attributes) {
+      // Process fields in block.attributes
+      await processBlockFields(block.attributes as Record<string, unknown>, fieldTypeDictionary);
+    // biome-ignore lint/suspicious/noExplicitAny: <i need to type blocks here>
+    } else if ((block as any).item?.attributes) {
+      // biome-ignore lint/suspicious/noExplicitAny: <i need to type blocks here>
+      await processBlockFields((block as any).item.attributes as Record<string, unknown>, fieldTypeDictionary);
+    } else {
+      await processBlockFields(block, fieldTypeDictionary);
+    }
 
-      // Show progress if using streaming callbacks
-      if (streamCallbacks?.onStream) {
-        streamCallbacks.onStream(`Translating block field: ${field}...`);
-      }
-      
-      // Check for cancellation
-      if (streamCallbacks?.checkCancellation?.()) {
-        logger.info('Translation cancelled by user');
-        return cleanedFieldValue;
-      }
+    // Helper function to process fields and avoid code duplication
+    async function processBlockFields(
+      source: Record<string, unknown>,
+      fieldTypeDictionary: Record<string, { editor: string; id: string }>
+    ) {
+      for (const field in source) {
+        if (
+          field === 'itemTypeId' ||
+          field === 'originalIndex' ||
+          field === 'blockModelId' ||
+          field === 'type' ||
+          field === 'children' ||
+          field === "relationships" ||
+          field === "attributes" // Skip the attributes object itself
+        ) {
+          continue;
+        }
 
-      let nestedPrompt = ' Return the response in the format of ';
-      nestedPrompt +=
-        fieldPrompt[fieldTypeDictionary[field]?.editor as keyof typeof fieldPrompt] ||
-        '';
+        // Show progress if using streaming callbacks
+        if (streamCallbacks?.onStream) {
+          streamCallbacks.onStream(`Translating block field: ${field}...`);
+        }
+        
+        // Check for cancellation
+        if (streamCallbacks?.checkCancellation?.()) {
+          logger.info('Translation cancelled by user');
+          return cleanedFieldValue;
+        }
 
-      block[field] = await translateFieldValue(
-        block[field],
-        pluginParams,
-        toLocale,
-        fromLocale,
-        fieldTypeDictionary[field]?.editor || 'text',
-        openai,
-        nestedPrompt,
-        apiToken,
-        fieldTypeDictionary[field]?.id || '',
-        streamCallbacks,
-        recordContext
-      );
+        let nestedPrompt = ' Return the response in the format of ';
+        nestedPrompt +=
+          fieldPrompt[fieldTypeDictionary[field]?.editor as keyof typeof fieldPrompt] ||
+          '';
+
+        source[field] = await translateFieldValue(
+          source[field],
+          pluginParams,
+          toLocale,
+          fromLocale,
+          fieldTypeDictionary[field]?.editor || 'text',
+          openai,
+          nestedPrompt,
+          apiToken,
+          fieldTypeDictionary[field]?.id || '',
+          streamCallbacks,
+          recordContext
+        );
+      }
     }
   }
 
@@ -315,6 +338,17 @@ async function TranslateField(
     // Using nullish coalescing operator to handle undefined value
     const fieldApiKey = ctx.fieldPath ?? '';
 
+    let fieldTypePrompt = 'Return the response in the format of ';
+    const fieldPromptObject = fieldPrompt;
+    const baseFieldPrompts = fieldPromptObject ? fieldPromptObject : {};
+    
+    // Structured and rich text fields use specialized prompts defined elsewhere
+    if (fieldType !== 'structured_text' && fieldType !== 'rich_text') {
+      fieldTypePrompt +=
+        baseFieldPrompts[fieldType as keyof typeof baseFieldPrompts] || '';
+    }
+  
+
     const translatedValue = await translateFieldValue(
       fieldValue,
       pluginParams,
@@ -322,7 +356,7 @@ async function TranslateField(
       fromLocale,
       fieldType,
       openai,
-      '',
+      fieldTypePrompt,
       apiToken as string,
       fieldApiKey, // This is already a string because of the nullish coalescing operator
       streamCallbacks,

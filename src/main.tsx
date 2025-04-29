@@ -8,6 +8,7 @@
 
 import {
   connect,
+  type ItemDropdownActionsCtx,
   type DropdownAction,
   type DropdownActionGroup,
   type ExecuteFieldDropdownActionCtx,
@@ -15,6 +16,8 @@ import {
   type ItemFormSidebarPanelsCtx,
   type ItemType,
   type RenderFieldExtensionCtx,
+  type ExecuteItemsDropdownActionCtx,
+  type Item,
   type RenderItemFormSidebarPanelCtx,
 } from 'datocms-plugin-sdk';
 import 'datocms-react-ui/styles.css';
@@ -25,12 +28,16 @@ import ConfigScreen, {
 } from './entrypoints/Config/ConfigScreen';
 import { render } from './utils/render';
 import locale from 'locale-codes';
-import TranslateField from './utils/translation/TranslateField';
+import TranslateField, { generateRecordContext, translateFieldValue } from './utils/translation/TranslateField';
 import DatoGPTTranslateSidebar from './entrypoints/Sidebar/DatoGPTTranslateSidebar';
 import { Button, Canvas } from 'datocms-react-ui';
 import LoadingAddon from './entrypoints/LoadingAddon';
 import { defaultPrompt } from './prompts/DefaultPrompt';
+import { buildClient } from '@datocms/cma-client-browser';
+import OpenAI from 'openai';
+import { fieldPrompt } from './prompts/FieldPrompts';
 
+// Utility for getting locale name by tag
 const localeSelect = locale.getByTag;
 
 /**
@@ -51,10 +58,6 @@ function getValueAtPath(obj: unknown, path: string): unknown {
       : (acc as unknown[])[index];
   }, obj);
 }
-
-// This SVG icon string is used for the OpenAI label
-const openAIIcon =
-  '<svg fill="#000000" role="img" xmlns="http://www.w3.org/2000/svg"><g id="SVGRepo_bgCarrier" stroke-width="0"></g><g id="SVGRepo_tracerCarrier" stroke-linecap="round" stroke-linejoin="round"></g><g id="SVGRepo_iconCarrier"><title>OpenAI icon</title><path d="M22.2819 9.8211a5.9847 5.9847 0 0 0-.5157-4.9108 6.0462 6.0462 0 0 0-6.5098-2.9A6.0651 6.0651 0 0 0 4.9807 4.1818a5.9847 5.9847 0 0 0-3.9977 2.9 6.0462 6.0462 0 0 0 .7427 7.0966 5.98 5.98 0 0 0 .511 4.9107 6.051 6.051 0 0 0 6.5146 2.9001A5.9847 5.9847 0 0 0 13.2599 24a6.0557 6.0557 0 0 0 5.7718-4.2058 5.9894 5.9894 0 0 0 3.9977-2.9001 6.0557 6.0557 0 0 0-.7475-7.0729zm-9.022 12.6081a4.4755 4.4755 0 0 1-2.8764-1.0408l.1419-.0804 4.7783-2.7582a.7948.7948 0 0 0 .3927-.6813v-6.7369l2.02 1.1686a.071.071 0 0 1 .038.052v5.5826a4.504 4.504 0 0 1-4.4945 4.4944zm-9.6607-4.1254a4.4708 4.4708 0 0 1-.5346-3.0137l.142.0852 4.783 2.7582a.7712.7712 0 0 0 .7806 0l5.8428-3.3685v2.3324a.0804.0804 0 0 1-.0332.0615L9.74 19.9502a4.4992 4.4992 0 0 1-6.1408-1.6464zM2.3408 7.8956a4.485 4.485 0 0 1 2.3655-1.9728V11.6a.7664.7664 0 0 0 .3879.6765l5.8144 3.3543-2.0201 1.1685a.0757.0757 0 0 1-.071 0l-4.8303-2.7865A4.504 4.504 0 0 1 2.3408 7.872zm16.5963 3.8558L13.1038 8.364 15.1192 7.2a.0757.0757 0 0 1 .071 0l4.8303 2.7913a4.4944 4.4944 0 0 1-.6765 8.1042v-5.6772a.79.79 0 0 0-.407-.667zm2.0107-3.0231l-.142-.0852-4.7735-2.7818a.7759.7759 0 0 0-.7854 0L9.409 9.2297V6.8974a.0662.0662 0 0 1 .0284-.0615l4.8303-2.7866a4.4992 4.4992 0 0 1 6.6802 4.66zM8.3065 12.863l-2.02-1.1638a.0804.0804 0 0 1-.038-.0567V6.0742a4.4992 4.4992 0 0 1 7.3757-3.4537l-.142.0805L8.704 5.459a.7948.7948 0 0 0-.3927.6813z"></path></g></svg>';
 
 /**
  * Primary plugin connection point.
@@ -113,6 +116,56 @@ connect({
 
   renderConfigScreen(ctx) {
     return render(<ConfigScreen ctx={ctx} />);
+  },
+  itemsDropdownActions(_itemType: ItemType, ctx: ItemDropdownActionsCtx) {
+
+    return ctx.site.attributes.locales.map((locale) => ({
+      label: `Translate Record from ${locale}`,
+      icon: "language",
+      actions: ctx.site.attributes.locales.filter((targetLocale) => targetLocale !== locale).map((targetLocale) => ({
+        label: `to ${targetLocale}`,
+        icon: "globe",
+        id: `translateRecord-${locale}-${targetLocale}`,
+      }))
+    }));
+  },
+
+  async executeItemsDropdownAction(actionId: string, items: Item[], ctx: ExecuteItemsDropdownActionCtx) {
+    if (!ctx.currentUserAccessToken) {
+      ctx.alert('No user access token found');
+      return;
+    }
+
+    // Parse action ID to get locale information
+    const { fromLocale, toLocale } = parseActionId(actionId);
+    
+    const pluginParams = ctx.plugin.attributes.parameters as ctxParamsType;
+    
+    // Build DatoCMS client
+    const client = buildDatoCMSClient(ctx.currentUserAccessToken);
+    
+    // Fetch all records with pagination
+    const records = await fetchRecordsWithPagination(client, items.map(item => item.id));
+    
+    // Create OpenAI client
+    const openai = createOpenAIClient(pluginParams.apiKey);
+
+    // Build a dictionary of field types for the first record's item type
+    const fieldTypeDictionary = await buildFieldTypeDictionary(client, records[0].item_type.id);
+    
+    // Process and translate each record
+    await translateAndUpdateRecords(
+      records, 
+      client, 
+      openai, 
+      fromLocale, 
+      toLocale, 
+      fieldTypeDictionary, 
+      pluginParams, 
+      ctx
+    );
+
+    return;
   },
 
   /**
@@ -195,17 +248,6 @@ connect({
    */
   fieldDropdownActions(_field, ctx: FieldDropdownActionsCtx) {
     const pluginParams = ctx.plugin.attributes.parameters as ctxParamsType;
-    const openaAIIconObject = {
-      type: 'svg',
-      viewBox: '0 0 28 28',
-      content: openAIIcon,
-    };
-
-    const menuOpenAIIconObject = {
-      type: 'svg',
-      viewBox: '0 -8 33 33',
-      content: openAIIcon,
-    };
 
     // If plugin is not configured with an API key or GPT model, show an error
     if (
@@ -218,7 +260,7 @@ connect({
         {
           id: 'not-configured',
           label: 'Please insert a valid API Key and select a GPT Model',
-          icon: openaAIIconObject,
+          icon: "language",
         } as DropdownAction,
       ];
     }
@@ -322,7 +364,7 @@ connect({
     if (isLocalized && hasOtherLocales && hasFieldValueInThisLocale) {
       actionsArray.push({
         label: 'Translate to',
-        icon: menuOpenAIIconObject,
+        icon: "language",
         actions: [
           {
             id: 'translateTo.allLocales',
@@ -344,7 +386,7 @@ connect({
     if (isLocalized && hasOtherLocales) {
       actionsArray.push({
         label: 'Translate from',
-        icon: menuOpenAIIconObject,
+        icon: "language",
         actions: [
           ...availableLocales
             .filter((locale) => locale !== ctx.locale)
@@ -490,3 +532,205 @@ connect({
     }
   },
 });
+
+/**
+ * Parses the action ID to extract fromLocale and toLocale
+ */
+function parseActionId(actionId: string): { fromLocale: string; toLocale: string } {
+  const actionParts = actionId.split('-');
+  const [fromLocale, toLocale] = actionParts.slice(-2);
+  return { fromLocale, toLocale };
+}
+
+/**
+ * Creates a DatoCMS client with the provided access token
+ */
+function buildDatoCMSClient(accessToken: string) {
+  return buildClient({
+    apiToken: accessToken
+  });
+}
+
+/**
+ * Creates an OpenAI client with the provided API key
+ */
+function createOpenAIClient(apiKey: string) {
+  return new OpenAI({
+    apiKey,
+    dangerouslyAllowBrowser: true
+  });
+}
+
+/**
+ * Fetches records with pagination based on item IDs
+ */
+async function fetchRecordsWithPagination(client: ReturnType<typeof buildClient>, itemIds: string[]) {
+  const allRecords: DatoCMSRecord[] = [];
+  let page = 1;
+  const pageSize = 30;
+  let hasMorePages = true;
+  
+  while (hasMorePages) {
+    const response: DatoCMSRecord[] = await client.items.list({
+      filter: {
+        ids: itemIds.join(',')
+      },
+      nested: true,
+      page: {
+        offset: (page - 1) * pageSize,
+        limit: pageSize
+      }
+    });
+    
+    allRecords.push(...response);
+    hasMorePages = response.length === pageSize;
+    page++;
+  }
+  
+  return allRecords;
+}
+
+/**
+ * Builds a dictionary of field types for an item type
+ */
+async function buildFieldTypeDictionary(client: ReturnType<typeof buildClient>, itemTypeId: string) {
+  const fields = await client.fields.list(itemTypeId);
+  return fields.reduce((acc: Record<string, { editor: string; id: string; isLocalized: boolean }>, field: {
+    api_key: string;
+    appearance: { editor: string };
+    id: string;
+    localized: boolean;
+  }) => {
+    acc[field.api_key] = {
+      editor: field.appearance.editor,
+      id: field.id,
+      isLocalized: field.localized
+    };
+    return acc;
+  }, {});
+}
+
+/**
+ * Determines if a field should be translated
+ */
+function shouldTranslateField(
+  field: string, 
+  record: DatoCMSRecord, 
+  fromLocale: string, 
+  fieldTypeDictionary: Record<string, { editor: string; id: string; isLocalized: boolean }>
+): boolean {
+  // Skip system fields that shouldn't be translated
+  if (
+    ['id', 'creator', 'meta', 'type', 'item_type'].includes(field) || 
+    !record[field] || 
+    !(record[field] as Record<string, unknown>)[fromLocale] || 
+    !fieldTypeDictionary[field]?.isLocalized
+  ) {
+    return false;
+  }
+  
+  return true;
+}
+
+/**
+ * Prepares the field-specific prompt based on field type
+ */
+function prepareFieldTypePrompt(fieldType: string): string {
+  let fieldTypePrompt = 'Return the response in the format of ';
+  const fieldPromptObject = fieldPrompt;
+  const baseFieldPrompts = fieldPromptObject ? fieldPromptObject : {};
+  
+  // Structured and rich text fields use specialized prompts defined elsewhere
+  if (fieldType !== 'structured_text' && fieldType !== 'rich_text') {
+    fieldTypePrompt +=
+      baseFieldPrompts[fieldType as keyof typeof baseFieldPrompts] || '';
+  }
+  
+  return fieldTypePrompt;
+}
+
+/**
+ * Defines a DatoCMS record structure with common fields
+ */
+type DatoCMSRecord = {
+  id: string;
+  item_type: { id: string };
+  [key: string]: unknown;
+};
+
+/**
+ * Translates and updates all records
+ */
+async function translateAndUpdateRecords(
+  records: DatoCMSRecord[],
+  client: ReturnType<typeof buildClient>,
+  openai: OpenAI,
+  fromLocale: string,
+  toLocale: string,
+  fieldTypeDictionary: Record<string, { editor: string; id: string; isLocalized: boolean }>,
+  pluginParams: ctxParamsType,
+  ctx: ExecuteItemsDropdownActionCtx
+) {
+  for (const record of records) {
+    const translatedFields = await translateRecordFields(
+      record,
+      fromLocale,
+      toLocale,
+      fieldTypeDictionary,
+      openai,
+      pluginParams,
+      ctx.currentUserAccessToken || ''
+    );
+
+    await client.items.update(record.id, {
+      ...translatedFields
+    });
+
+    ctx.notice('Record translated successfully');
+  }
+}
+
+/**
+ * Translates all fields for a single record
+ */
+async function translateRecordFields(
+  record: DatoCMSRecord,
+  fromLocale: string,
+  toLocale: string,
+  fieldTypeDictionary: Record<string, { editor: string; id: string; isLocalized: boolean }>,
+  openai: OpenAI,
+  pluginParams: ctxParamsType,
+  accessToken: string
+): Promise<Record<string, unknown>> {
+  const translatedFields: Record<string, unknown> = {};
+  
+  for (const field in record) {
+    if (!shouldTranslateField(field, record, fromLocale, fieldTypeDictionary)) {
+      continue;
+    }
+
+    translatedFields[field] = record[field];
+
+    const fieldValue = (record[field] as Record<string, unknown>)[fromLocale];
+    const fieldType = fieldTypeDictionary[field].editor;
+    const fieldTypePrompt = prepareFieldTypePrompt(fieldType);
+  
+    const translatedValue = await translateFieldValue(
+      fieldValue,
+      pluginParams,
+      toLocale,
+      fromLocale,
+      fieldType,
+      openai,
+      fieldTypePrompt,
+      accessToken,
+      fieldTypeDictionary[field].id,
+      undefined,
+      generateRecordContext(record, fromLocale)
+    );
+
+    (translatedFields[field] as Record<string, unknown>)[toLocale] = translatedValue;
+  }
+  
+  return translatedFields;
+}
