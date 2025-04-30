@@ -28,6 +28,7 @@ export function parseActionId(actionId: string): { fromLocale: string; toLocale:
 
 /**
  * Fetches records with pagination based on item IDs
+ * Always retrieves the most recent draft state
  */
 export async function fetchRecordsWithPagination(
   client: ReturnType<typeof buildClient>, 
@@ -44,6 +45,7 @@ export async function fetchRecordsWithPagination(
         ids: itemIds.join(',')
       },
       nested: true,
+      version: 'current', // Explicitly request the draft/current version
       page: {
         offset: (page - 1) * pageSize,
         limit: pageSize
@@ -59,6 +61,22 @@ export async function fetchRecordsWithPagination(
 }
 
 /**
+ * Checks if an object has a specific key (including in nested objects)
+ */
+function hasKeyDeep(obj: Record<string, unknown>, targetKey: string): boolean {
+  if (!obj || typeof obj !== 'object') return false;
+  
+  if (Object.prototype.hasOwnProperty.call(obj, targetKey)) return true;
+  
+  return Object.values(obj).some(value => {
+    if (typeof value === 'object' && value !== null) {
+      return hasKeyDeep(value as Record<string, unknown>, targetKey);
+    }
+    return false;
+  });
+}
+
+/**
  * Translates and updates all records
  */
 export async function translateAndUpdateRecords(
@@ -71,23 +89,86 @@ export async function translateAndUpdateRecords(
   pluginParams: ctxParamsType,
   ctx: ExecuteItemsDropdownActionCtx
 ): Promise<void> {
-  for (const record of records) {
-    const translatedFields = await translateRecordFields(
-      record,
-      fromLocale,
-      toLocale,
-      fieldTypeDictionary,
-      openai,
-      pluginParams,
-      ctx.currentUserAccessToken || ''
-    );
+  // Helper function to send progress updates to the modal
+  const updateProgress = (recordIndex: number, recordId: string, status: 'processing' | 'completed' | 'error', message?: string) => {
+    interface WindowWithProgressUpdate extends Window {
+      __translationProgressUpdate?: (update: {
+        recordIndex: number;
+        recordId: string;
+        status: 'processing' | 'completed' | 'error';
+        message?: string;
+      }) => void;
+    }
+    
+    const win = window as unknown as WindowWithProgressUpdate;
+    if (typeof win.__translationProgressUpdate === 'function') {
+      win.__translationProgressUpdate({
+        recordIndex,
+        recordId,
+        status,
+        message
+      });
+    }
+  };
+  
+  for (let i = 0; i < records.length; i++) {
+    const record = records[i];
+    
+    // Check if translation was cancelled by the user
+    interface WindowWithCancellation extends Window {
+      __translationCancelled?: boolean;
+    }
+    
+    const win = window as unknown as WindowWithCancellation;
+    if (win.__translationCancelled) {
+      updateProgress(i, record.id, 'error', 'Translation cancelled by user');
+      return;
+    }
+    
+    // Update progress to 'processing'
+    updateProgress(i, record.id, 'processing');
+    
+    try {
+      // Check if the record has the fromLocale key
+      if (!hasKeyDeep(record as Record<string, unknown>, fromLocale)) {
+        const errorMsg = `Record does not have the source locale '${fromLocale}'`;
+        console.error(`Record ${record.id} ${errorMsg}`);
+        ctx.alert(`Error: Record ID ${record.id} ${errorMsg}`);
+        updateProgress(i, record.id, 'error', errorMsg);
+        continue; // Skip to the next record
+      }
+      
+      // Update processing status with more details
+      updateProgress(i, record.id, 'processing', 'Translating fields...');
+      
+      const translatedFields = await translateRecordFields(
+        record,
+        fromLocale,
+        toLocale,
+        fieldTypeDictionary,
+        openai,
+        pluginParams,
+        ctx.currentUserAccessToken || ''
+      );
+      
+      // Update processing status for saving
+      updateProgress(i, record.id, 'processing', 'Saving translated content...');
 
-    await client.items.update(record.id, {
-      ...translatedFields
-    });
+      await client.items.update(record.id, {
+        ...translatedFields
+      });
 
-    ctx.notice('Record translated successfully');
+      // Update progress to 'completed'
+      updateProgress(i, record.id, 'completed');
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      console.error(`Error translating record ${record.id}:`, errorMessage);
+      updateProgress(i, record.id, 'error', `Translation failed: ${errorMessage}`);
+    }
   }
+  
+  // Don't show the notice here since we're managing feedback through the modal
+  // instead of ctx.notice('Record translated successfully');
 }
 
 /**

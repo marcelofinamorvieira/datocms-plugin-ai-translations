@@ -19,6 +19,7 @@ import {
   type ExecuteItemsDropdownActionCtx,
   type Item,
   type RenderItemFormSidebarPanelCtx,
+  type RenderModalCtx,
 } from 'datocms-plugin-sdk';
 
 import {
@@ -38,18 +39,13 @@ import TranslateField from './utils/translation/TranslateField';
 import DatoGPTTranslateSidebar from './entrypoints/Sidebar/DatoGPTTranslateSidebar';
 import LoadingAddon from './entrypoints/LoadingAddon';
 import { defaultPrompt } from './prompts/DefaultPrompt';
+import TranslationProgressModal from './components/TranslationProgressModal';
 
 // Utility for getting locale name by tag
 const localeSelect = locale.getByTag;
 
 // Import refactored utility functions and types
-import { buildDatoCMSClient, createOpenAIClient } from './utils/clients';
-import { 
-  parseActionId, 
-  fetchRecordsWithPagination, 
-  translateAndUpdateRecords,
-  buildFieldTypeDictionary
-} from './utils/translation/ItemsDropdownUtils';
+import { parseActionId } from './utils/translation/ItemsDropdownUtils';
 
 /**
  * Helper function to get nested values by dot/bracket notation
@@ -154,30 +150,34 @@ connect({
     
     const pluginParams = ctx.plugin.attributes.parameters as ctxParamsType;
     
-    // Build DatoCMS client
-    const client = buildDatoCMSClient(ctx.currentUserAccessToken);
+    // Open a modal to show translation progress and handle translation process
+    const modalPromise = ctx.openModal({
+      id: 'translationProgressModal',
+      title: 'Translation Progress',
+      width: 'l',
+      parameters: {
+        totalRecords: items.length,
+        fromLocale,
+        toLocale,
+        accessToken: ctx.currentUserAccessToken,
+        pluginParams,
+        itemIds: items.map(item => item.id)
+      }
+    });
     
-    // Fetch all records with pagination
-    const records = await fetchRecordsWithPagination(client, items.map(item => item.id));
+    try {
+      // Wait for the modal to be closed by the user
+      const result = await modalPromise;
+      
+      if (result && (result as TranslationModalResult).completed) {
+        ctx.notice(`Successfully translated ${items.length} record(s) from ${fromLocale} to ${toLocale}`);
+      } else if (result && (result as TranslationModalResult).canceled) {
+        ctx.notice(`Translation from ${fromLocale} to ${toLocale} was canceled`);
+      }
+    } catch (error) {
+      ctx.alert(`Error: ${error instanceof Error ? error.message : String(error)}`);
+    }
     
-    // Create OpenAI client
-    const openai = createOpenAIClient(pluginParams.apiKey);
-
-    // Build a dictionary of field types for the first record's item type
-    const fieldTypeDictionary = await buildFieldTypeDictionary(client, records[0].item_type.id);
-    
-    // Process and translate each record
-    await translateAndUpdateRecords(
-      records, 
-      client, 
-      openai, 
-      fromLocale, 
-      toLocale, 
-      fieldTypeDictionary, 
-      pluginParams, 
-      ctx
-    );
-
     return;
   },
 
@@ -544,4 +544,32 @@ connect({
       ctx.navigateTo(`/configuration/plugins/${ctx.plugin.id}/edit`);
     }
   },
+  
+  /**
+   * Renders modal components.
+   */
+  renderModal(modalId: string, ctx: RenderModalCtx) {
+    switch (modalId) {
+      case 'translationProgressModal':
+        // Properly type the parameters to match the expected interface
+        return render(<TranslationProgressModal 
+          ctx={ctx} 
+          parameters={ctx.parameters as {
+            totalRecords: number;
+            fromLocale: string;
+            toLocale: string;
+            accessToken: string;
+            pluginParams: ctxParamsType;
+            itemIds: string[];
+          }} 
+        />);
+      default:
+        return null;
+    }
+  }
 });
+
+interface TranslationModalResult {
+  completed: boolean;
+  canceled: boolean;
+}
