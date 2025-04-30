@@ -18,6 +18,15 @@ import type { ctxParamsType } from '../../entrypoints/Config/ConfigScreen';
 import { createLogger } from '../logging/Logger';
 
 /**
+ * Interface for SEO field object structure
+ */
+interface SeoObject {
+  title?: string;
+  description?: string;
+  [key: string]: unknown;
+}
+
+/**
  * Interface for handling streaming translation updates
  * 
  * @interface StreamCallbacks
@@ -27,6 +36,8 @@ import { createLogger } from '../logging/Logger';
 type StreamCallbacks = {
   onStream?: (chunk: string) => void;
   onComplete?: () => void;
+  checkCancellation?: () => boolean;
+  abortSignal?: AbortSignal;
 };
 
 /**
@@ -37,7 +48,7 @@ type StreamCallbacks = {
  * translated values. It handles streaming updates for UI feedback and
  * uses record context to improve translation quality when available.
  *
- * @param {unknown} fieldValue - The SEO field object to translate
+ * @param {SeoObject} fieldValue - The SEO field object to translate
  * @param {ctxParamsType} pluginParams - Plugin configuration parameters
  * @param {string} toLocale - Target locale code for translation
  * @param {string} fromLocale - Source locale code for translation
@@ -45,10 +56,10 @@ type StreamCallbacks = {
  * @param {string} fieldTypePrompt - Additional prompt for SEO format instructions
  * @param {StreamCallbacks} streamCallbacks - Optional callbacks for streaming updates
  * @param {string} recordContext - Optional context about the record being translated
- * @returns {Promise<unknown>} - The translated SEO object
+ * @returns {Promise<SeoObject>} - The translated SEO object
  */
 export async function translateSeoFieldValue(
-  fieldValue: unknown,
+  fieldValue: SeoObject,
   pluginParams: ctxParamsType,
   toLocale: string,
   fromLocale: string,
@@ -56,11 +67,11 @@ export async function translateSeoFieldValue(
   fieldTypePrompt: string,
   streamCallbacks?: StreamCallbacks,
   recordContext = ''
-): Promise<unknown> {
+): Promise<SeoObject> {
   const logger = createLogger(pluginParams, 'translateSeoFieldValue');
   logger.info('Starting SEO field translation', { fromLocale, toLocale });
   
-  const seoObject = fieldValue as Record<string, unknown>;
+  const seoObject = fieldValue;
   const seoObjectToTranslate = {
     title: seoObject.title || '',
     description: seoObject.description || '',
@@ -110,13 +121,64 @@ export async function translateSeoFieldValue(
 
     logger.info(`Received translated text with length ${translatedText.length}`);
 
-    // Parse the returned object
-    const returnedSeoObject = JSON.parse(translatedText || '{}');
-    logger.info('Successfully parsed translated SEO object');
+    // Clean up the response to ensure it's valid JSON
+    let sanitizedText = translatedText.trim();
+    
+    // Remove potential markdown code block markers
+    sanitizedText = sanitizedText.replace(/^```(json)?\n?/i, '').replace(/```$/i, '');
+    
+    // Handle potential unintended characters at the beginning
+    if (!sanitizedText.startsWith('{')) {
+      const jsonStart = sanitizedText.indexOf('{');
+      if (jsonStart !== -1) {
+        sanitizedText = sanitizedText.substring(jsonStart);
+      }
+    }
+    
+    // Handle potential unintended characters at the end
+    const lastBrace = sanitizedText.lastIndexOf('}');
+    if (lastBrace !== -1 && lastBrace < sanitizedText.length - 1) {
+      sanitizedText = sanitizedText.substring(0, lastBrace + 1);
+    }
+    
+    logger.info(`Sanitized JSON: ${sanitizedText}`);
+
+    // Parse the returned object with error handling
+    let returnedSeoObject: SeoObject = { title: '', description: '' };
+    try {
+      returnedSeoObject = JSON.parse(sanitizedText || '{}');
+      logger.info('Successfully parsed translated SEO object');
+    } catch (parseError) {
+      logger.error(`JSON parse error: ${parseError instanceof Error ? parseError.message : String(parseError)}`);
+      logger.error(`Attempted to parse: ${sanitizedText}`);
+      
+      // Fallback: extract title and description with regex
+      logger.info('Attempting fallback extraction with regex');
+      const titleMatch = /"title"\s*:\s*"([^"]+)"/i.exec(sanitizedText);
+      const descriptionMatch = /"description"\s*:\s*"([^"]+)"/i.exec(sanitizedText);
+      
+      returnedSeoObject = {
+        title: titleMatch ? titleMatch[1] : seoObject.title,
+        description: descriptionMatch ? descriptionMatch[1] : seoObject.description
+      };
+      
+      logger.info(`Fallback extraction result: ${JSON.stringify(returnedSeoObject)}`);
+    }
 
     // Update the original seoObject
-    seoObject.title = returnedSeoObject.title || seoObject.title;
-    seoObject.description = returnedSeoObject.description || seoObject.description;
+    // Enforce character limits for SEO content
+    if (returnedSeoObject.title && returnedSeoObject.title.length > 60) {
+      logger.info(`SEO title exceeds 60 character limit (${returnedSeoObject.title.length}). Truncating...`);
+      returnedSeoObject.title = `${returnedSeoObject.title.substring(0, 57)}...`;
+    }
+    
+    if (returnedSeoObject.description && returnedSeoObject.description.length > 160) {
+      logger.info(`SEO description exceeds 160 character limit (${returnedSeoObject.description.length}). Truncating...`);
+      returnedSeoObject.description = `${returnedSeoObject.description.substring(0, 157)}...`;
+    }
+    
+    seoObject.title = (returnedSeoObject.title as string) || (seoObject.title as string);
+    seoObject.description = (returnedSeoObject.description as string) || (seoObject.description as string);
     
     logger.info('SEO translation completed successfully');
     return seoObject;

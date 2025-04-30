@@ -35,6 +35,7 @@ export type ctxParamsType = {
   apiKey: string; // The API key used to authenticate with OpenAI
   translationFields: string[]; // List of field editor types that can be translated
   translateWholeRecord: boolean; // Whether to allow entire record translation
+  translateBulkRecords: boolean; // Whether to allow bulk records translation in tabular view
   prompt: string; // The prompt template used by the translation logic
   modelsToBeExcludedFromThisPlugin: string[]; // List of model API keys to exclude from translation
   rolesToBeExcludedFromThisPlugin: string[]; // List of role IDs to exclude from translation
@@ -120,6 +121,7 @@ const updatePluginParams = async (
   gptModel: string,
   translationFields: string[],
   translateWholeRecord: boolean,
+  translateBulkRecords: boolean,
   prompt: string,
   modelsToBeExcludedFromThisPlugin: string[],
   rolesToBeExcludedFromThisPlugin: string[],
@@ -134,6 +136,7 @@ const updatePluginParams = async (
       gptModel,
       translationFields,
       translateWholeRecord,
+      translateBulkRecords,
       prompt,
       modelsToBeExcludedFromThisPlugin,
       rolesToBeExcludedFromThisPlugin,
@@ -194,6 +197,13 @@ export default function ConfigScreen({ ctx }: { ctx: RenderConfigScreenCtx }) {
   const [translateWholeRecord, setTranslateWholeRecord] = useState<boolean>(
     typeof pluginParams.translateWholeRecord === 'boolean'
       ? pluginParams.translateWholeRecord
+      : true
+  );
+
+  // Local state to allow bulk records translation
+  const [translateBulkRecords, setTranslateBulkRecords] = useState<boolean>(
+    typeof pluginParams.translateBulkRecords === 'boolean'
+      ? pluginParams.translateBulkRecords
       : true
   );
 
@@ -301,6 +311,7 @@ export default function ConfigScreen({ ctx }: { ctx: RenderConfigScreenCtx }) {
         (pluginParams.translationFields?.sort().join(',') ??
           Object.keys(translateFieldTypes).sort().join(',')) ||
       translateWholeRecord !== (pluginParams.translateWholeRecord ?? true) ||
+      translateBulkRecords !== (pluginParams.translateBulkRecords ?? true) ||
       prompt !== (pluginParams.prompt ?? defaultPrompt) ||
       modelsToBeExcluded.sort().join(',') !==
         (pluginParams.modelsToBeExcludedFromThisPlugin?.sort().join(',') ??
@@ -317,6 +328,7 @@ export default function ConfigScreen({ ctx }: { ctx: RenderConfigScreenCtx }) {
     gptModel,
     translationFields,
     translateWholeRecord,
+    translateBulkRecords,
     prompt,
     modelsToBeExcluded,
     rolesToBeExcluded,
@@ -326,6 +338,7 @@ export default function ConfigScreen({ ctx }: { ctx: RenderConfigScreenCtx }) {
     pluginParams.gptModel,
     pluginParams.translationFields,
     pluginParams.translateWholeRecord,
+    pluginParams.translateBulkRecords,
     pluginParams.prompt,
     pluginParams.modelsToBeExcludedFromThisPlugin,
     pluginParams.rolesToBeExcludedFromThisPlugin,
@@ -463,13 +476,54 @@ export default function ConfigScreen({ ctx }: { ctx: RenderConfigScreenCtx }) {
         />
         {/* A switch field to allow translation of the entire record from the sidebar */}
         <div className={s.switchField}>
-          <SwitchField
-            name="translateWholeRecord"
-            id="translateWholeRecord"
-            label="Allow translation of the whole record from the sidebar"
-            value={translateWholeRecord}
-            onChange={(newValue) => setTranslateWholeRecord(newValue)}
-          />
+          <div style={{ display: 'flex', alignItems: 'center' }}>
+            <SwitchField
+              name="translateWholeRecord"
+              id="translateWholeRecord"
+              label="Allow translation of the whole record from the sidebar"
+              value={translateWholeRecord}
+              onChange={(newValue) => setTranslateWholeRecord(newValue)}
+            />
+            {/* Tooltip container with image for sidebar translation */}
+            <div className={s.tooltipContainer}>
+              ⓘ
+              <div className={`${s.tooltipText} ${s.imageTooltip}`}>
+                <img 
+                  src="/public/assets/sidebar-translation-example.png" 
+                  alt="Sidebar translation example"
+                  style={{ width: '100%', maxWidth: '420px' }}
+                />
+                <div style={{ marginTop: '10px', fontWeight: 'bold' }}>Sidebar Translation</div>
+                <div style={{ fontSize: '12px' }}>Translate an entire record from the sidebar panel</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* A switch field to allow bulk records translation */}
+        <div className={s.switchField}>
+          <div style={{ display: 'flex', alignItems: 'center' }}>
+            <SwitchField
+              name="translateBulkRecords"
+              id="translateBulkRecords"
+              label="Allow bulk records translation in tabular view"
+              value={translateBulkRecords}
+              onChange={(newValue) => setTranslateBulkRecords(newValue)}
+            />
+            {/* Tooltip container with image for bulk translation */}
+            <div className={s.tooltipContainer}>
+              ⓘ
+              <div className={`${s.tooltipText} ${s.imageTooltip}`}>
+                <img 
+                  src="/public/assets/bulk-translation-example.png" 
+                  alt="Bulk records translation example"
+                  style={{ width: '100%', maxWidth: '420px' }}
+                />
+                <div style={{ marginTop: '10px', fontWeight: 'bold' }}>Bulk Translation</div>
+                <div style={{ fontSize: '12px' }}>Translate multiple records at once in the tabular view</div>
+              </div>
+            </div>
+          </div>
         </div>
 
         {/* A switch field to enable debug logging */}
@@ -614,7 +668,7 @@ export default function ConfigScreen({ ctx }: { ctx: RenderConfigScreenCtx }) {
             <div className={s.tooltipContainer}>
               ⓘ
               {/* Actual tooltip text that appears on hover */}
-              <div className={s.tooltipText}>
+              <div className={`${s.tooltipText} ${s.leftAnchorTooltip}`}>
                 Use &#123;fieldValue&#125;, &#123;fromLocale&#125;, and
                 &#123;toLocale&#125; in your prompt to reference the content and
                 source/target languages. Changing the prompt can break the
@@ -642,6 +696,7 @@ export default function ConfigScreen({ ctx }: { ctx: RenderConfigScreenCtx }) {
               (translationFields.sort().join(',') ===
                 Object.keys(translateFieldTypes).sort().join(',') &&
                 translateWholeRecord === true &&
+                translateBulkRecords === true &&
                 prompt === defaultPrompt &&
                 modelsToBeExcluded.length === 0 &&
                 rolesToBeExcluded.length === 0 &&
@@ -652,6 +707,7 @@ export default function ConfigScreen({ ctx }: { ctx: RenderConfigScreenCtx }) {
               setGptModel('gpt-4.1-mini');
               setTranslationFields(Object.keys(translateFieldTypes));
               setTranslateWholeRecord(true);
+              setTranslateBulkRecords(true);
               setPrompt(defaultPrompt);
               setModelsToBeExcluded([]);
               setRolesToBeExcluded([]);
@@ -674,6 +730,7 @@ export default function ConfigScreen({ ctx }: { ctx: RenderConfigScreenCtx }) {
                 gptModel,
                 translationFields,
                 translateWholeRecord,
+                translateBulkRecords,
                 prompt,
                 modelsToBeExcluded,
                 rolesToBeExcluded,

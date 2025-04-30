@@ -127,6 +127,18 @@ connect({
     return render(<ConfigScreen ctx={ctx} />);
   },
   itemsDropdownActions(_itemType: ItemType, ctx: ItemDropdownActionsCtx) {
+    const pluginParams = ctx.plugin.attributes.parameters as ctxParamsType;
+    
+    // Check for feature toggle and exclusion rules
+    const isRoleExcluded = pluginParams.rolesToBeExcludedFromThisPlugin?.includes(ctx.currentRole.id);
+    const isModelExcluded = pluginParams.modelsToBeExcludedFromThisPlugin?.includes(_itemType.attributes.api_key);
+    
+    // Return empty array if bulk translation is disabled or if role/model is excluded
+    if ((typeof pluginParams.translateBulkRecords === 'boolean' && !pluginParams.translateBulkRecords) ||
+        isRoleExcluded || 
+        isModelExcluded) {
+      return [];
+    }
 
     return ctx.site.attributes.locales.map((locale) => ({
       label: `Translate Record from ${locale}`,

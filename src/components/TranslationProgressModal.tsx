@@ -14,6 +14,7 @@ import { buildDatoCMSClient, createOpenAIClient } from '../utils/clients';
 import type { ctxParamsType } from '../entrypoints/Config/ConfigScreen';
 import { translateFieldValue } from '../utils/translation/TranslateField';
 import { generateRecordContext } from '../utils/translation/TranslateField';
+import './TranslationProgressModal.css';
 
 interface ProgressUpdate {
   recordIndex: number;
@@ -43,7 +44,6 @@ export default function TranslationProgressModal({ ctx, parameters }: Translatio
   const { totalRecords, fromLocale, toLocale, accessToken, pluginParams, itemIds } = parameters;
   const [progress, setProgress] = useState<ProgressUpdate[]>([]);
   const [isCompleted, setIsCompleted] = useState(false);
-  const [errors, setErrors] = useState<string[]>([]);
   const [isCancelled, setIsCancelled] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   
@@ -60,7 +60,7 @@ export default function TranslationProgressModal({ ctx, parameters }: Translatio
 
     // Collect errors but don't change processing state
     if (update.status === 'error') {
-      setErrors(prev => [...prev, update.message || 'An error occurred during translation']);
+      // Removed the setErrors call here
     }
   };
   
@@ -94,7 +94,7 @@ export default function TranslationProgressModal({ ctx, parameters }: Translatio
         
       } catch (error) {
         if (isMounted) {
-          setErrors(prev => [...prev, `Translation error: ${error instanceof Error ? error.message : String(error)}`]);
+          // Removed the setErrors call here
           setIsProcessing(false);
         }
       }
@@ -239,12 +239,11 @@ export default function TranslationProgressModal({ ctx, parameters }: Translatio
           message: `Successfully translated ${translatableFields.length} fields in record ID: ${record.id}`
         });
       } catch (error) {
-        const errorMessage = error instanceof Error ? error.message : String(error);
         addProgressUpdate({
           recordIndex: i,
           recordId: records[i].id,
           status: 'error',
-          message: `Translation failed for record ID ${records[i].id}: ${errorMessage}. This issue likely happened because the record is already in an invalid state.`
+          message: `Translation failed for record ID ${records[i].id}. This issue likely happened because the record is already in an invalid state.`
         });
         // Process will naturally continue to the next record
       }
@@ -300,131 +299,62 @@ export default function TranslationProgressModal({ ctx, parameters }: Translatio
   
   return (
     <Canvas ctx={ctx}>
-      <div style={{ 
-        padding: '24px', 
-        maxWidth: '600px',
-        margin: '0 auto',
-        textAlign: 'center',
-        display: 'flex',
-        flexDirection: 'column',
-        alignItems: 'center'
-      }}>
-        <h2 style={{ 
-          marginTop: 0, 
-          marginBottom: '16px', 
-          fontSize: '21px',
-          fontWeight: '600',
-          color: '#333'
-        }}>
-          Translating Records
-        </h2>
-        
-        <div style={{ marginBottom: '24px', width: '100%' }}>
-          <p style={{ margin: '0 0 8px 0', fontSize: '15px' }}>
-            Translating from <strong>{fromLocale}</strong> to <strong>{toLocale}</strong>
-          </p>
-          <p style={{ margin: '0', fontSize: '15px' }}>
-            Progress: {completedCount} of {totalRecords} records processed ({percentComplete}%)
-          </p>
-          <p style={{ margin: '4px 0 0 0', fontSize: '14px', color: '#666' }}>
-            {processedRecords.filter(update => update.status === 'completed').length} successful, 
-            {processedRecords.filter(update => update.status === 'error').length} failed
-          </p>
+      <div className="TranslationProgressModal">
+        <div className="TranslationProgressModal__header">
+          <h2>Translating Records</h2>
+          <div className="TranslationProgressModal__languages">
+            <p>
+              Translating from <strong>{fromLocale}</strong> to <strong>{toLocale}</strong>
+            </p>
+            <p className="TranslationProgressModal__progress-text">
+              Progress: {completedCount} of {totalRecords} records processed ({percentComplete}%)
+            </p>
+            <p className="TranslationProgressModal__stats">
+              {processedRecords.filter(update => update.status === 'completed').length} successful, {' '}
+              {processedRecords.filter(update => update.status === 'error').length} failed
+            </p>
+          </div>
         </div>
         
         {/* Progress bar */}
-        <div 
-          style={{
-            height: '6px',
-            width: '100%',
-            backgroundColor: '#e8e8e8',
-            borderRadius: '3px',
-            marginBottom: '20px',
-            overflow: 'hidden'
-          }}
-        >
+        <div className="TranslationProgressModal__progress-bar">
           <div 
-            style={{
-              height: '100%',
-              width: `${percentComplete}%`,
-              backgroundColor: '#7357d2',
-              transition: 'width 0.3s ease-in-out'
-            }}
+            className="TranslationProgressModal__progress-bar-fill"
+            style={{width: `${percentComplete}%`}}
           />
         </div>
         
         {/* Progress list */}
-        <div 
-          style={{
-            maxHeight: '180px',
-            overflowY: 'auto',
-            border: '1px solid #e8e8e8',
-            borderRadius: '4px',
-            marginBottom: '24px',
-            backgroundColor: '#f9f9f9',
-            width: '100%'
-          }}
-        >
+        <div className="TranslationProgressModal__updates">
           {progress.length > 0 ? (
-            <ul style={{ margin: 0, padding: '8px', listStyleType: 'none' }}>
-              {/* Show items sorted by record index to ensure consistent display order */}
-              {[...progress].sort((a, b) => a.recordIndex - b.recordIndex).map((item) => (
+            <ul className="TranslationProgressModal__update-list">
+              {progress.sort((a, b) => a.recordIndex - b.recordIndex).map((update) => (
                 <li 
-                  key={`${item.recordId}-${item.status}-${item.recordIndex}`}
-                  style={{
-                    padding: '8px',
-                    borderBottom: '1px solid #e8e8e8',
-                    display: 'flex',
-                    alignItems: 'center',
-                    fontSize: '14px',
-                    color: '#444'
-                  }}
+                  key={`${update.recordIndex}-${update.message}`}
+                  className={`TranslationProgressModal__update-item TranslationProgressModal__update-item--${update.status}`}
                 >
-                  {item.status === 'processing' && (
-                    <Spinner size={16} style={{ marginRight: '8px', color: '#7357d2' }} />
-                  )}
-                  {item.status === 'completed' && (
-                    <span style={{ color: '#3cbc8d', marginRight: '8px', fontWeight: 'bold' }}>✓</span>
-                  )}
-                  {item.status === 'error' && (
-                    <span style={{ color: '#e25444', marginRight: '8px', fontWeight: 'bold' }}>✗</span>
-                  )}
-                  <span>
-                    Record {item.recordIndex + 1}: {item.message || (item.status === 'completed' ? 'Translated successfully' : 'Processing...')}
+                  <span className="TranslationProgressModal__update-status">
+                    {update.status === 'completed' && '✓'}
+                    {update.status === 'processing' && <Spinner size={16} />}
+                    {update.status === 'error' && '✗'}
+                  </span>
+                  <span className="TranslationProgressModal__update-message">
+                    {update.message}
                   </span>
                 </li>
               ))}
             </ul>
           ) : (
-            <div style={{ padding: '24px', textAlign: 'center', color: '#666' }}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                <Spinner size={20} style={{ marginRight: '8px', color: '#7357d2' }} />
+            <div className="TranslationProgressModal__initializing">
+              <div className="TranslationProgressModal__spinner-container">
+                <Spinner size={20} />
                 <span>Initializing translation...</span>
               </div>
             </div>
           )}
         </div>
         
-        {errors.length > 0 && (
-          <div 
-            style={{
-              padding: '12px',
-              backgroundColor: '#fdecea',
-              color: '#e25444',
-              borderRadius: '4px',
-              marginBottom: '20px',
-              fontSize: '14px',
-              width: '100%',
-              textAlign: 'left'
-            }}
-          >
-            {errors.map((error, index) => (
-              <p key={`error-${index}-${error.substring(0, 20)}`}>{error}</p>
-            ))}
-          </div>
-        )}
-        
-        <div style={{ display: 'flex', justifyContent: 'center', width: '100%', gap: '16px' }}>
+        <div className="TranslationProgressModal__footer">
           {!isCompleted && isProcessing && (
             <Button 
               type="button" 

@@ -1,0 +1,150 @@
+/* TranslationProgressModal.css */
+
+.TranslationProgressModal {
+  padding: 24px;
+  max-width: 600px;
+  margin: 0 auto;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  font-family: var(--font-family);
+}
+
+.TranslationProgressModal__header {
+  width: 100%;
+  margin-bottom: 24px;
+}
+
+.TranslationProgressModal__header h2 {
+  margin-top: 0;
+  margin-bottom: 16px;
+  font-size: 21px;
+  font-weight: 600;
+  color: var(--accent-color);
+}
+
+.TranslationProgressModal__languages {
+  margin-bottom: 16px;
+}
+
+.TranslationProgressModal__languages p {
+  margin: 0 0 8px 0;
+  font-size: 15px;
+}
+
+.TranslationProgressModal__progress-text {
+  font-weight: 500;
+  margin-bottom: 4px !important;
+}
+
+.TranslationProgressModal__stats {
+  margin: 4px 0 0 0 !important;
+  font-size: 14px;
+  color: var(--light-body-color);
+}
+
+.TranslationProgressModal__progress-bar {
+  height: 6px;
+  width: 100%;
+  background-color: var(--border-color);
+  border-radius: 3px;
+  margin-bottom: 20px;
+  overflow: hidden;
+}
+
+.TranslationProgressModal__progress-bar-fill {
+  height: 100%;
+  background-color: var(--accent-color);
+  transition: width 0.3s ease-in-out;
+}
+
+.TranslationProgressModal__updates {
+  max-height: 180px;
+  overflow-y: auto;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  margin-bottom: 24px;
+  background-color: var(--light-bg-color);
+  width: 100%;
+}
+
+.TranslationProgressModal__update-list {
+  margin: 0;
+  padding: 8px;
+  list-style-type: none;
+}
+
+.TranslationProgressModal__update-item {
+  padding: 8px;
+  border-bottom: 1px solid var(--border-color);
+  display: flex;
+  align-items: center;
+  font-size: 14px;
+  color: var(--base-body-color);
+  text-align: left;
+}
+
+.TranslationProgressModal__update-item:last-child {
+  border-bottom: none;
+}
+
+.TranslationProgressModal__update-status {
+  margin-right: 8px;
+  display: flex;
+  align-items: center;
+  min-width: 20px;
+}
+
+.TranslationProgressModal__update-item--completed .TranslationProgressModal__update-status {
+  color: var(--success-color);
+  font-weight: bold;
+}
+
+.TranslationProgressModal__update-item--error .TranslationProgressModal__update-status {
+  color: var(--alert-color);
+  font-weight: bold;
+}
+
+.TranslationProgressModal__update-item--processing .TranslationProgressModal__update-status {
+  color: var(--accent-color);
+}
+
+.TranslationProgressModal__update-message {
+  flex: 1;
+}
+
+.TranslationProgressModal__initializing {
+  padding: 24px;
+  text-align: center;
+  color: var(--light-body-color);
+}
+
+.TranslationProgressModal__spinner-container {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.TranslationProgressModal__errors {
+  padding: 12px;
+  background-color: var(--alert-light-bg-color);
+  color: var(--alert-color);
+  border-radius: 4px;
+  margin-bottom: 20px;
+  font-size: 14px;
+  width: 100%;
+  text-align: left;
+}
+
+.TranslationProgressModal__errors p {
+  margin: 8px 0;
+}
+
+.TranslationProgressModal__footer {
+  display: flex;
+  justify-content: center;
+  width: 100%;
+  gap: 16px;
+}
