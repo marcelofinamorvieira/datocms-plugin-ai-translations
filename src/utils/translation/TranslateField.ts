@@ -19,7 +19,7 @@ import {
 } from '../../entrypoints/Config/ConfigScreen';
 import { fieldPrompt } from '../../prompts/FieldPrompts';
 import { translateDefaultFieldValue } from './DefaultTranslation';
-import { translateSeoFieldValue } from './SeoTranslation';
+import { type SeoObject, translateSeoFieldValue } from './SeoTranslation';
 import { translateStructuredTextValue } from './StructuredTextTranslation';
 import { translateFileFieldValue } from './FileFieldTranslation';
 import { deleteItemIdKeys } from './utils';
@@ -104,7 +104,7 @@ export async function translateFieldValue(
   switch (fieldType) {
     case 'seo':
       return translateSeoFieldValue(
-        fieldValue,
+        fieldValue as SeoObject,
         pluginParams,
         toLocale,
         fromLocale,

@@ -20,7 +20,7 @@ import { createLogger } from '../logging/Logger';
 /**
  * Interface for SEO field object structure
  */
-interface SeoObject {
+export interface SeoObject {
   title?: string;
   description?: string;
   [key: string]: unknown;
@@ -59,7 +59,7 @@ type StreamCallbacks = {
  * @returns {Promise<SeoObject>} - The translated SEO object
  */
 export async function translateSeoFieldValue(
-  fieldValue: SeoObject,
+  fieldValue: SeoObject | undefined | null,
   pluginParams: ctxParamsType,
   toLocale: string,
   fromLocale: string,
@@ -70,6 +70,10 @@ export async function translateSeoFieldValue(
 ): Promise<SeoObject> {
   const logger = createLogger(pluginParams, 'translateSeoFieldValue');
   logger.info('Starting SEO field translation', { fromLocale, toLocale });
+
+  if (!fieldValue) {
+    return { title: '', description: '' };
+  }
   
   const seoObject = fieldValue;
   const seoObjectToTranslate = {
