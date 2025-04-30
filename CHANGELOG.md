@@ -5,6 +5,32 @@ All notable changes to the DatoCMS AI Translations Plugin will be documented in 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.9.0] - 2025-04-30
+
+### Added
+
+- **AI Bulk Translations Page**: New dedicated page in Settings sidebar for bulk translations
+  - Translate all records across multiple models in one operation
+  - Optimized UI with source and target language selectors
+  - Improved record fetching with DatoCMS listPagedIterator
+  - Block models automatically excluded
+
+- **Table View Bulk Translations**: Enhanced bulk translation for record lists
+  - Translate multiple selected records at once from any table view
+  - Simplified workflow with consistent translation modal
+
+### Changed
+
+- **Updated models support**: Added support for GPT-4.1 model line
+  - Optimized prompts for better translation quality
+  - Improved handling of complex field types
+
+### Fixed
+
+- Various bug fixes and performance improvements
+- Enhanced error handling in translation process
+- Improved UI responsiveness
+
 ## [1.7.0] - 2025-03-19
 
 ### Added

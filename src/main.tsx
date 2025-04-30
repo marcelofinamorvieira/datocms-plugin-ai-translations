@@ -6,20 +6,22 @@
  * the translation logic when actions are invoked.
  */
 
-import {
-  connect,
-  type ItemDropdownActionsCtx,
-  type DropdownAction,
-  type DropdownActionGroup,
-  type RenderFieldExtensionCtx,
-  type ExecuteFieldDropdownActionCtx,
-  type FieldDropdownActionsCtx,
-  type ItemType,
-  type ItemFormSidebarPanelsCtx,
-  type ExecuteItemsDropdownActionCtx,
-  type Item,
-  type RenderItemFormSidebarPanelCtx,
-  type RenderModalCtx,
+import { connect } from 'datocms-plugin-sdk';
+import type {
+  ItemDropdownActionsCtx,
+  DropdownAction,
+  DropdownActionGroup,
+  RenderFieldExtensionCtx,
+  ExecuteFieldDropdownActionCtx,
+  FieldDropdownActionsCtx,
+  ItemType,
+  ItemFormSidebarPanelsCtx,
+  ExecuteItemsDropdownActionCtx,
+  Item,
+  RenderItemFormSidebarPanelCtx,
+  RenderModalCtx,
+  RenderPageCtx,
+  SettingsAreaSidebarItemGroupsCtx,
 } from 'datocms-plugin-sdk';
 
 import {
@@ -40,6 +42,7 @@ import DatoGPTTranslateSidebar from './entrypoints/Sidebar/DatoGPTTranslateSideb
 import LoadingAddon from './entrypoints/LoadingAddon';
 import { defaultPrompt } from './prompts/DefaultPrompt';
 import TranslationProgressModal from './components/TranslationProgressModal';
+import AIBulkTranslationsPage from './entrypoints/CustomPage/AIBulkTranslationsPage';
 
 // Utility for getting locale name by tag
 const localeSelect = locale.getByTag;
@@ -126,6 +129,40 @@ connect({
   renderConfigScreen(ctx) {
     return render(<ConfigScreen ctx={ctx} />);
   },
+  
+  // New hook to add a custom section in the Settings area
+  settingsAreaSidebarItemGroups(ctx: SettingsAreaSidebarItemGroupsCtx) {
+    // Only show to users who can edit schema
+    if (!ctx.currentRole.attributes.can_edit_schema) {
+      return [];
+    }
+    
+    return [
+      {
+        label: 'AI Translations',
+        items: [
+          {
+            label: 'Bulk Translations',
+            icon: 'language',
+            pointsTo: {
+              pageId: 'ai-bulk-translations',
+            },
+          },
+        ],
+      },
+    ];
+  },
+  
+  // Update renderPage function to render our custom page
+  renderPage(pageId: string, ctx: RenderPageCtx) {
+    switch (pageId) {
+      case 'ai-bulk-translations':
+        return render(<AIBulkTranslationsPage ctx={ctx} />);
+      default:
+        return null;
+    }
+  },
+  
   itemsDropdownActions(_itemType: ItemType, ctx: ItemDropdownActionsCtx) {
     const pluginParams = ctx.plugin.attributes.parameters as ctxParamsType;
     
