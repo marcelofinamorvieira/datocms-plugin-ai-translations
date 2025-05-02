@@ -73,7 +73,7 @@ The plugin includes a dedicated page for translating multiple models at once:
 4. Click "Start Bulk Translation"
 5. The modal will display progress as all records from the selected models are translated
 
-![AI Bulk Translations Page](https://raw.githubusercontent.com/marcelofinamorvieira/datocms-plugin-ai-translations/refs/heads/master/public/assets/sidebar-translation-example.png)
+![AI Bulk Translations Page](https://github.com/user-attachments/assets/eefd5f25-efc7-4f3b-bf49-ff05d623b35c)
 
 ## Contextual Translations
 
