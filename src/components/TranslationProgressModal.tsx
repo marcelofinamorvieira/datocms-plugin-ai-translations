@@ -78,7 +78,7 @@ export default function TranslationProgressModal({ ctx, parameters }: Translatio
       
       try {
         // Build DatoCMS client
-        const client = buildDatoCMSClient(accessToken);
+        const client = buildDatoCMSClient(accessToken, ctx.environment);
         
         // Fetch all records with pagination
         const records = await fetchRecordsWithPagination(client, itemIds);
@@ -105,7 +105,7 @@ export default function TranslationProgressModal({ ctx, parameters }: Translatio
     return () => {
       isMounted = false;
     };
-  }, [accessToken, fromLocale, toLocale, itemIds, pluginParams.apiKey, isProcessing, isCompleted]);
+  }, [accessToken, fromLocale, toLocale, itemIds, pluginParams.apiKey, isProcessing, isCompleted, ctx.environment]);
   
   // Process and translate records with progress updates
   const translateRecords = async (
@@ -195,6 +195,7 @@ export default function TranslationProgressModal({ ctx, parameters }: Translatio
               fieldTypePrompt,
               accessToken,
               fieldTypeDictionary[field].id,
+              ctx.environment,
               undefined,
               generateRecordContext(record as Record<string, unknown>, fromLocale)
             );

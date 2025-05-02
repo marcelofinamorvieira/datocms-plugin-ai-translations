@@ -7,9 +7,10 @@ import OpenAI from 'openai';
 /**
  * Creates a DatoCMS client with the provided access token
  */
-export function buildDatoCMSClient(accessToken: string) {
+export function buildDatoCMSClient(accessToken: string, environment: string) {
   return buildClient({
-    apiToken: accessToken
+    apiToken: accessToken,
+    environment
   });
 }
 

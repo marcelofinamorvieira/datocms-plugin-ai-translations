@@ -510,7 +510,8 @@ connect({
         pluginParams,
         ctx.locale,
         locale,
-        fieldType
+        fieldType,
+        ctx.environment,
       );
 
       // Persist translated value into the current editing locale
@@ -546,7 +547,8 @@ connect({
             pluginParams,
             loc,
             ctx.locale,
-            fieldType
+            fieldType,
+            ctx.environment,
           );
 
           await ctx.setFieldValue(
@@ -573,7 +575,8 @@ connect({
         pluginParams,
         locale,
         ctx.locale,
-        fieldType
+        fieldType,
+        ctx.environment,
       );
 
       await ctx.setFieldValue(

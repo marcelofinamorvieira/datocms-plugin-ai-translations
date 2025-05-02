@@ -209,6 +209,7 @@ export async function translateRecordFields(
         fieldTypePrompt,
         ctx.currentUserAccessToken as string,
         field.id,
+        ctx.environment,
         streamCallbacks,
         recordContext
       );

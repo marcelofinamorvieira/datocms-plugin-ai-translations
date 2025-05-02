@@ -72,6 +72,7 @@ export async function translateFieldValue(
   fieldTypePrompt: string,
   apiToken: string,
   fieldId: string | undefined,
+  environment: string,
   streamCallbacks?: StreamCallbacks,
   recordContext = ''
 ): Promise<unknown> {
@@ -121,6 +122,7 @@ export async function translateFieldValue(
         fromLocale,
         openai,
         apiToken,
+        environment,
         streamCallbacks,
         recordContext
       );
@@ -134,6 +136,7 @@ export async function translateFieldValue(
         openai,
         apiToken,
         fieldType,
+        environment,
         streamCallbacks,
         recordContext
       );
@@ -187,6 +190,7 @@ async function translateBlockValue(
   openai: OpenAI,
   apiToken: string,
   fieldType: string,
+  environment: string,
   streamCallbacks?: StreamCallbacks,
   recordContext = ''
 ) {
@@ -199,7 +203,7 @@ async function translateBlockValue(
     !isFramedSingleBlock ? fieldValue : [fieldValue]
   ) as Array<Record<string, unknown>>;
 
-  const client = buildClient({ apiToken });
+  const client = buildClient({ apiToken, environment });
 
   for (const block of cleanedFieldValue) {
     // Determine the block model ID
@@ -276,6 +280,7 @@ async function translateBlockValue(
           nestedPrompt,
           apiToken,
           fieldTypeDictionary[field]?.id || '',
+          environment,
           streamCallbacks,
           recordContext
         );
@@ -311,6 +316,7 @@ async function TranslateField(
   toLocale: string,
   fromLocale: string,
   fieldType: string,
+  environment: string,
   streamCallbacks?: StreamCallbacks,
   recordContext = ''
 ) {
@@ -359,6 +365,7 @@ async function TranslateField(
       fieldTypePrompt,
       apiToken as string,
       fieldApiKey, // This is already a string because of the nullish coalescing operator
+      environment,
       streamCallbacks,
       contextToUse
     );

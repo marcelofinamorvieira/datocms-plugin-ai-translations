@@ -361,11 +361,11 @@ export default function ConfigScreen({ ctx }: { ctx: RenderConfigScreenCtx }) {
   const [roles, setRoles] = useState<{ id: string; name: string }[]>([]);
 
   useEffect(() => {
-    const client = buildClient({ apiToken: ctx.currentUserAccessToken as string });
+    const client = buildClient({ apiToken: ctx.currentUserAccessToken as string, environment: ctx.environment });
     client.roles.list().then((roles) => {
       setRoles(roles.map((role) => ({ id: role.id, name: role.name })));
     });
-  }, [ctx.currentUserAccessToken]);
+  }, [ctx.currentUserAccessToken, ctx.environment]);
 
   return (
     // Canvas is a Datocms React UI wrapper for consistent styling

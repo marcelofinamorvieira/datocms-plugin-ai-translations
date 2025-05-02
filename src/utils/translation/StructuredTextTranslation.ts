@@ -104,6 +104,7 @@ export async function translateStructuredTextValue(
   fromLocale: string,
   openai: OpenAI,
   apiToken: string,
+  environment: string,
   streamCallbacks?: StreamCallbacks,
   recordContext = ''
 ): Promise<unknown> {
@@ -267,6 +268,7 @@ IMPORTANT: Your response must be a valid JSON array of strings with EXACTLY ${te
           '',
           apiToken,
           '',
+          environment,
           streamCallbacks,
           recordContext
         ) as StructuredTextNode[];

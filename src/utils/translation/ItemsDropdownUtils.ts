@@ -148,7 +148,8 @@ export async function translateAndUpdateRecords(
         fieldTypeDictionary,
         openai,
         pluginParams,
-        ctx.currentUserAccessToken || ''
+        ctx.currentUserAccessToken || '',
+        ctx.environment
       );
       
       // Update processing status for saving
@@ -181,7 +182,8 @@ export async function translateRecordFields(
   fieldTypeDictionary: Record<string, { editor: string; id: string; isLocalized: boolean }>,
   openai: OpenAI,
   pluginParams: ctxParamsType,
-  accessToken: string
+  accessToken: string,
+  environment: string
 ): Promise<Record<string, unknown>> {
   const translatedFields: Record<string, unknown> = {};
   
@@ -206,6 +208,7 @@ export async function translateRecordFields(
       fieldTypePrompt,
       accessToken,
       fieldTypeDictionary[field].id,
+      environment,
       undefined,
       generateRecordContext(record, fromLocale)
     );

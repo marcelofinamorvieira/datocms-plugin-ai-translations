@@ -42,7 +42,7 @@ export default function AIBulkTranslationsPage({ ctx }: PropTypes) {
       }
 
       try {
-        const client = buildDatoCMSClient(ctx.currentUserAccessToken);
+        const client = buildDatoCMSClient(ctx.currentUserAccessToken, ctx.environment);
         
         const itemTypes = await client.itemTypes.list() 
 
@@ -103,7 +103,7 @@ export default function AIBulkTranslationsPage({ ctx }: PropTypes) {
     }
 
     try {
-      const client = buildDatoCMSClient(ctx.currentUserAccessToken);
+      const client = buildDatoCMSClient(ctx.currentUserAccessToken, ctx.environment);
       const allRecordIds: string[] = [];
       
       setIsLoading(true);
