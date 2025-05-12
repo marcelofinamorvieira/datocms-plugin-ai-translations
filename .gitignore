@@ -24,3 +24,6 @@ dist-ssr
 *.sw?
 
 .tmplr-preview
+
+# Claude Code files
+CLAUDE.md

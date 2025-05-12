@@ -422,4 +422,27 @@ export function generateRecordContext(formValues: Record<string, unknown>, sourc
   return hasAddedContext ? contextStr : '';
 }
 
+/**
+ * Helper function to find the exact case-sensitive locale key in an object.
+ * This is essential for properly handling hyphenated locales (e.g., "pt-BR", "pt-br")
+ * as DatoCMS requires exact case matches for locale keys.
+ *
+ * @param obj The object containing locale keys
+ * @param localeCode The locale code to search for (case-insensitive)
+ * @returns The exact locale key as it appears in the object, or undefined if not found
+ */
+export function findExactLocaleKey(obj: Record<string, unknown>, localeCode: string): string | undefined {
+  if (!obj || typeof obj !== 'object') return undefined;
+
+  const normalizedLocale = localeCode.toLowerCase();
+
+  for (const key in obj) {
+    if (key.toLowerCase() === normalizedLocale) {
+      return key; // Return the exact key with original casing
+    }
+  }
+
+  return undefined;
+}
+
 export default TranslateField;

@@ -5,7 +5,7 @@ import type { buildClient } from '@datocms/cma-client-browser';
 import type OpenAI from 'openai';
 import type { ctxParamsType } from '../../entrypoints/Config/ConfigScreen';
 import type { ExecuteItemsDropdownActionCtx } from 'datocms-plugin-sdk';
-import { translateFieldValue, generateRecordContext } from './TranslateField';
+import { translateFieldValue, generateRecordContext, findExactLocaleKey } from './TranslateField';
 import { fieldPrompt } from '../../prompts/FieldPrompts';
 
 /**
@@ -19,10 +19,25 @@ export type DatoCMSRecordFromAPI = {
 
 /**
  * Parses the action ID to extract fromLocale and toLocale
+ * Properly handles hyphenated locales like "pt-BR"
  */
 export function parseActionId(actionId: string): { fromLocale: string; toLocale: string } {
-  const actionParts = actionId.split('-');
-  const [fromLocale, toLocale] = actionParts.slice(-2);
+  // Action ID format is typically: "translateRecord-en-pt-BR" or "translateRecord-en-pt"
+  // First we need to remove the prefix
+  const prefix = "translateRecord-";
+  const localesString = actionId.startsWith(prefix) ? actionId.substring(prefix.length) : actionId;
+
+  // Split by the first hyphen to separate source and target locales
+  const firstHyphenIndex = localesString.indexOf('-');
+  if (firstHyphenIndex === -1) {
+    // Fallback if format is unexpected
+    console.error(`Invalid action ID format: ${actionId}`);
+    return { fromLocale: 'en', toLocale: 'en' };
+  }
+
+  const fromLocale = localesString.substring(0, firstHyphenIndex);
+  const toLocale = localesString.substring(firstHyphenIndex + 1);
+
   return { fromLocale, toLocale };
 }
 
@@ -62,12 +77,22 @@ export async function fetchRecordsWithPagination(
 
 /**
  * Checks if an object has a specific key (including in nested objects)
+ * Supports both regular locale codes and hyphenated locales (e.g., "pt-br")
  */
 function hasKeyDeep(obj: Record<string, unknown>, targetKey: string): boolean {
   if (!obj || typeof obj !== 'object') return false;
-  
-  if (Object.prototype.hasOwnProperty.call(obj, targetKey)) return true;
-  
+
+  // Normalize targetKey to handle hyphenated locales like "pt-br"
+  const normalizedTargetKey = targetKey.toLowerCase();
+
+  // Direct match check (case-insensitive to handle inconsistencies)
+  for (const key in obj) {
+    if (key.toLowerCase() === normalizedTargetKey) {
+      return true;
+    }
+  }
+
+  // Recursive check in nested objects
   return Object.values(obj).some(value => {
     if (typeof value === 'object' && value !== null) {
       return hasKeyDeep(value as Record<string, unknown>, targetKey);
@@ -221,10 +246,14 @@ export async function translateRecordFields(
     // At this point, field is localized and should be translated.
     // updatePayload[field] already contains other locales from the initialization loop or record.
 
-    const sourceValue = (record[field] as Record<string, unknown>)?.[fromLocale];
+    // Handle hyphenated locales by finding the exact field key that matches the fromLocale
+    const fieldData = record[field] as Record<string, unknown>;
+    const fromLocaleKey = findExactLocaleKey(fieldData, fromLocale);
+    const sourceValue = fromLocaleKey ? fieldData[fromLocaleKey] : undefined;
+
     const fieldType = fieldTypeDictionary[field].editor;
     const fieldTypePrompt = prepareFieldTypePrompt(fieldType);
-  
+
     try {
       if (sourceValue === null || sourceValue === undefined || sourceValue === '') {
         updatePayload[field][toLocale] = null;
@@ -243,6 +272,7 @@ export async function translateRecordFields(
           undefined,
           generateRecordContext(record, fromLocale)
         );
+        // Ensure we use the exact case-sensitive toLocale key as expected by DatoCMS
         updatePayload[field][toLocale] = translatedValue;
       }
     } catch (error) {
@@ -276,23 +306,32 @@ export async function translateRecordFields(
 
 /**
  * Determines if a field should be translated
+ * Properly handles hyphenated locales
  */
 export function shouldTranslateField(
-  field: string, 
-  record: DatoCMSRecordFromAPI, 
-  fromLocale: string, 
+  field: string,
+  record: DatoCMSRecordFromAPI,
+  fromLocale: string,
   fieldTypeDictionary: Record<string, { editor: string; id: string; isLocalized: boolean }>
 ): boolean {
   // Skip system fields that shouldn't be translated
   if (
-    ['id', 'creator', 'meta', 'type', 'item_type'].includes(field) || 
-    !record[field] || 
-    !(record[field] as Record<string, unknown>)[fromLocale] || 
+    ['id', 'creator', 'meta', 'type', 'item_type'].includes(field) ||
+    !record[field] ||
     !fieldTypeDictionary[field]?.isLocalized
   ) {
     return false;
   }
-  
+
+  // Check for the source locale in the field data with proper hyphenated locale support
+  const fieldData = record[field] as Record<string, unknown>;
+  const exactFromLocaleKey = findExactLocaleKey(fieldData, fromLocale);
+
+  // Only translate if the source locale exists and has a value
+  if (!exactFromLocaleKey || !fieldData[exactFromLocaleKey]) {
+    return false;
+  }
+
   return true;
 }
 
@@ -311,11 +350,13 @@ export function prepareFieldTypePrompt(fieldType: string): string {
   return fieldTypePrompt;
 }
 
+// Using findExactLocaleKey imported from TranslateField.ts
+
 /**
  * Builds a dictionary of field types for an item type
  */
 export async function buildFieldTypeDictionary(
-  client: ReturnType<typeof buildClient>, 
+  client: ReturnType<typeof buildClient>,
   itemTypeId: string
 ) {
   const fields = await client.fields.list(itemTypeId);

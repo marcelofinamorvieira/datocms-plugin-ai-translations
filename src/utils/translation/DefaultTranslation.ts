@@ -63,10 +63,38 @@ export async function translateDefaultFieldValue(
     return fieldValue;
   }
 
-  // Format locale names for better prompt clarity
-  const localeMapper = new Intl.DisplayNames([fromLocale], { type: 'language' });
-  const fromLocaleName = localeMapper.of(fromLocale) || fromLocale;
-  const toLocaleName = localeMapper.of(toLocale) || toLocale;
+  // Format locale names for better prompt clarity, handling hyphenated locales
+  // For hyphenated locales like "pt-br", use just the language part for displaying
+  const fromLanguageCode = fromLocale.split('-')[0];
+  const toLanguageCode = toLocale.split('-')[0];
+
+  let fromLocaleName = fromLocale;
+  let toLocaleName = toLocale;
+
+  try {
+    // Use English as the display language to get consistent names
+    const localeMapper = new Intl.DisplayNames(['en'], { type: 'language' });
+    const fromLanguageName = localeMapper.of(fromLanguageCode);
+    const toLanguageName = localeMapper.of(toLanguageCode);
+
+    // Format the locale display names
+    if (fromLocale.includes('-')) {
+      const fromRegion = fromLocale.split('-')[1];
+      fromLocaleName = `${fromLanguageName} (${fromRegion})`;
+    } else {
+      fromLocaleName = fromLanguageName || fromLocale;
+    }
+
+    if (toLocale.includes('-')) {
+      const toRegion = toLocale.split('-')[1];
+      toLocaleName = `${toLanguageName} (${toRegion})`;
+    } else {
+      toLocaleName = toLanguageName || toLocale;
+    }
+  } catch (error) {
+    // Fallback in case the locale codes aren't recognized by Intl
+    console.warn(`Error formatting locale names for ${fromLocale}/${toLocale}:`, error);
+  }
 
   // Create logger for this module
   const logger = createLogger(pluginParams, 'DefaultTranslation');

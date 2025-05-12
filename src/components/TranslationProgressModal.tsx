@@ -3,8 +3,8 @@ import { Canvas, Button, Spinner } from 'datocms-react-ui';
 import type { RenderModalCtx } from 'datocms-plugin-sdk';
 import type { buildClient } from '@datocms/cma-client-browser';
 import type OpenAI from 'openai';
-import { 
-  fetchRecordsWithPagination, 
+import {
+  fetchRecordsWithPagination,
   buildFieldTypeDictionary,
   type DatoCMSRecordFromAPI,
   shouldTranslateField,
@@ -12,8 +12,7 @@ import {
 } from '../utils/translation/ItemsDropdownUtils';
 import { buildDatoCMSClient, createOpenAIClient } from '../utils/clients';
 import type { ctxParamsType } from '../entrypoints/Config/ConfigScreen';
-import { translateFieldValue } from '../utils/translation/TranslateField';
-import { generateRecordContext } from '../utils/translation/TranslateField';
+import { translateFieldValue, generateRecordContext, findExactLocaleKey } from '../utils/translation/TranslateField';
 import './TranslationProgressModal.css';
 
 interface ProgressUpdate {
@@ -138,7 +137,7 @@ export default function TranslationProgressModal({ ctx, parameters }: Translatio
       
       try {
         if (!hasKeyDeep(record as Record<string, unknown>, fromLocale)) {
-          const errorMsg = `Record ID ${record.id} does not have the source locale '${fromLocale}'`;
+          const errorMsg = `Record ID ${record.id} does not have the source locale '${formatLocaleDisplay(fromLocale)}'`;
           addProgressUpdate({ recordIndex: i, recordId: record.id, status: 'error', message: errorMsg });
           continue;
         }
@@ -170,7 +169,9 @@ export default function TranslationProgressModal({ ctx, parameters }: Translatio
           });
 
           try {
-            const sourceValue = currentLocalizedData[fromLocale];
+            // Find the exact locale key that matches fromLocale (case-insensitive)
+            const exactFromLocaleKey = findExactLocaleKey(currentLocalizedData, fromLocale);
+            const sourceValue = exactFromLocaleKey ? currentLocalizedData[exactFromLocaleKey] : undefined;
 
             if (sourceValue === null || sourceValue === undefined || sourceValue === '') {
               (payloadForUpdate[field] as Record<string, unknown>)[toLocale] = null;
@@ -268,12 +269,17 @@ export default function TranslationProgressModal({ ctx, parameters }: Translatio
   
   /**
    * Checks if an object has a specific key (including in nested objects)
+   * Supports both regular locale codes and hyphenated locales (e.g., "pt-br")
    */
   function hasKeyDeep(obj: Record<string, unknown>, targetKey: string): boolean {
     if (!obj || typeof obj !== 'object') return false;
-    
-    if (Object.prototype.hasOwnProperty.call(obj, targetKey)) return true;
-    
+
+    // Use findExactLocaleKey for the direct match check
+    if (findExactLocaleKey(obj, targetKey)) {
+      return true;
+    }
+
+    // Recursive check in nested objects
     return Object.values(obj).some(value => {
       if (typeof value === 'object' && value !== null) {
         return hasKeyDeep(value as Record<string, unknown>, targetKey);
@@ -281,7 +287,35 @@ export default function TranslationProgressModal({ ctx, parameters }: Translatio
       return false;
     });
   }
-  
+
+  // Using findExactLocaleKey imported from TranslateField.ts
+
+  /**
+   * Formats a locale code for display, using the Intl API when possible
+   * Handles hyphenated locales like "pt-BR" correctly
+   */
+  function formatLocaleDisplay(localeCode: string): string {
+    try {
+      // Get the primary language code (e.g., "pt" from "pt-BR")
+      const primaryLanguage = localeCode.split('-')[0];
+
+      // Try to get a nice display name for the language part
+      const localeMapper = new Intl.DisplayNames(['en'], { type: 'language' });
+      const languageName = localeMapper.of(primaryLanguage);
+
+      if (localeCode.includes('-')) {
+        // If it's a hyphenated locale, show both the language name and the region code
+        const regionCode = localeCode.split('-')[1];
+        return `${languageName} (${regionCode})`;
+      }
+
+      return languageName || localeCode;
+    } catch (error) {
+      // Fallback if Intl API fails
+      return localeCode;
+    }
+  }
+
   // Calculate completed counts correctly considering all processed records (completed or error)
   const processedRecords = Object.values(
     progress.reduce((uniqueRecords, update) => {
@@ -320,7 +354,7 @@ export default function TranslationProgressModal({ ctx, parameters }: Translatio
           <h2>Translating Records</h2>
           <div className="TranslationProgressModal__languages">
             <p>
-              Translating from <strong>{fromLocale}</strong> to <strong>{toLocale}</strong>
+              Translating from <strong>{formatLocaleDisplay(fromLocale)}</strong> to <strong>{formatLocaleDisplay(toLocale)}</strong>
             </p>
             <p className="TranslationProgressModal__progress-text">
               Progress: {completedCount} of {totalRecords} records processed ({percentComplete}%)
