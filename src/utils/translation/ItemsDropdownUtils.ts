@@ -185,38 +185,93 @@ export async function translateRecordFields(
   accessToken: string,
   environment: string
 ): Promise<Record<string, unknown>> {
-  const translatedFields: Record<string, unknown> = {};
-  
+  const updatePayload: Record<string, Record<string, unknown>> = {};
+
+  // Initialize payload with all localized fields from the record's schema
+  // to ensure they are all considered.
+  for (const fieldApiKey in fieldTypeDictionary) {
+    if (fieldTypeDictionary[fieldApiKey].isLocalized) {
+      // Start with existing localized data for this field from the record, or empty object.
+      updatePayload[fieldApiKey] = (record[fieldApiKey] as Record<string, unknown>) || {};
+    }
+  }
+
+  // Process fields that are present on the record and should be translated
   for (const field in record) {
-    if (!shouldTranslateField(field, record, fromLocale, fieldTypeDictionary)) {
+    if (!fieldTypeDictionary[field]?.isLocalized) {
+      // Skip non-localized fields or fields not in the current item type's schema dictionary
       continue;
     }
 
-    translatedFields[field] = record[field];
+    // Ensure the field is initialized in updatePayload if it wasn't caught by the first loop
+    // (e.g. fieldTypeDictionary might be from a slightly different source than live record keys)
+    if (!updatePayload[field]) {
+      updatePayload[field] = (record[field] as Record<string, unknown>) || {};
+    }
+    
+    if (!shouldTranslateField(field, record, fromLocale, fieldTypeDictionary)) {
+      // If not translatable (e.g., source empty), but is localized, ensure toLocale: null is set
+      // if it's not already present.
+      if (!(toLocale in updatePayload[field])) {
+         updatePayload[field][toLocale] = null;
+      }
+      continue;
+    }
 
-    const fieldValue = (record[field] as Record<string, unknown>)[fromLocale];
+    // At this point, field is localized and should be translated.
+    // updatePayload[field] already contains other locales from the initialization loop or record.
+
+    const sourceValue = (record[field] as Record<string, unknown>)?.[fromLocale];
     const fieldType = fieldTypeDictionary[field].editor;
     const fieldTypePrompt = prepareFieldTypePrompt(fieldType);
   
-    const translatedValue = await translateFieldValue(
-      fieldValue,
-      pluginParams,
-      toLocale,
-      fromLocale,
-      fieldType,
-      openai,
-      fieldTypePrompt,
-      accessToken,
-      fieldTypeDictionary[field].id,
-      environment,
-      undefined,
-      generateRecordContext(record, fromLocale)
-    );
-
-    (translatedFields[field] as Record<string, unknown>)[toLocale] = translatedValue;
+    try {
+      if (sourceValue === null || sourceValue === undefined || sourceValue === '') {
+        updatePayload[field][toLocale] = null;
+      } else {
+        const translatedValue = await translateFieldValue(
+          sourceValue,
+          pluginParams,
+          toLocale,
+          fromLocale,
+          fieldType,
+          openai,
+          fieldTypePrompt,
+          accessToken,
+          fieldTypeDictionary[field].id,
+          environment,
+          undefined,
+          generateRecordContext(record, fromLocale)
+        );
+        updatePayload[field][toLocale] = translatedValue;
+      }
+    } catch (error) {
+      // On error during translation for this specific field, set its target locale to null.
+      updatePayload[field][toLocale] = null;
+      console.error(`Error translating field ${field} for record ${record.id} in ItemsDropdownUtils:`, error);
+      // Depending on desired behavior, you might want to collect these errors
+      // or re-throw if one field error should stop the whole batch.
+      // For now, it just sets to null and continues.
+    }
   }
   
-  return translatedFields;
+  // Final check: Ensure all localized fields defined in the schema have the toLocale key.
+  // This catches localized fields that might not have been on the original `record` object
+  // or were not processed in the loop above for any reason.
+  for (const fieldApiKey in fieldTypeDictionary) {
+    if (fieldTypeDictionary[fieldApiKey].isLocalized) {
+      if (!updatePayload[fieldApiKey]) {
+        // Localized field from schema not yet in payload (e.g., was not on 'record' object)
+        updatePayload[fieldApiKey] = {}; // Initialize as empty object
+      }
+      // If toLocale is still not set for this localized field, default it to null.
+      if (!(toLocale in updatePayload[fieldApiKey])) {
+        updatePayload[fieldApiKey][toLocale] = null;
+      }
+    }
+  }
+  
+  return updatePayload;
 }
 
 /**

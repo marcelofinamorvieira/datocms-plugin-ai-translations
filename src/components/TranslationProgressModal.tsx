@@ -129,7 +129,6 @@ export default function TranslationProgressModal({ ctx, parameters }: Translatio
       
       const record = records[i];
       
-      // Show record ID in the message
       addProgressUpdate({
         recordIndex: i,
         recordId: record.id,
@@ -138,24 +137,16 @@ export default function TranslationProgressModal({ ctx, parameters }: Translatio
       });
       
       try {
-        // Check if the record has the source locale
         if (!hasKeyDeep(record as Record<string, unknown>, fromLocale)) {
           const errorMsg = `Record ID ${record.id} does not have the source locale '${fromLocale}'`;
-          addProgressUpdate({
-            recordIndex: i,
-            recordId: record.id,
-            status: 'error',
-            message: errorMsg
-          });
+          addProgressUpdate({ recordIndex: i, recordId: record.id, status: 'error', message: errorMsg });
           continue;
         }
         
-        // Get translatable fields for this record
         const translatableFields = Object.entries(record)
           .filter(([field]) => shouldTranslateField(field, record, fromLocale, fieldTypeDictionary))
           .map(([field]) => field);
         
-        // Update with field count information
         addProgressUpdate({
           recordIndex: i,
           recordId: record.id,
@@ -163,64 +154,91 @@ export default function TranslationProgressModal({ ctx, parameters }: Translatio
           message: `Found ${translatableFields.length} fields to translate in record ID: ${record.id}`
         });
         
-        const translatedFields: Record<string, unknown> = {};
+        const payloadForUpdate: Record<string, unknown> = {};
         
-        // Translate each field with progress updates
-        for (let fieldIndex = 0; fieldIndex < translatableFields.length; fieldIndex++) {
-          const field = translatableFields[fieldIndex];
-          
-          // Update on field translation start
+        // Step 1: Translate the "translatable" fields
+        for (const field of translatableFields) {
+          const currentLocalizedData = (record[field] as Record<string, unknown>) || {};
+          // Initialize with existing data for this field to preserve other locales.
+          payloadForUpdate[field] = { ...currentLocalizedData };
+
           addProgressUpdate({
             recordIndex: i,
             recordId: record.id,
             status: 'processing',
-            message: `Translating field '${field}' (${fieldIndex + 1}/${translatableFields.length}) in record ID: ${record.id}`
+            message: `Translating field '${field}' (${translatableFields.indexOf(field) + 1}/${translatableFields.length}) in record ID: ${record.id}`
           });
-          
-          translatedFields[field] = record[field];
 
           try {
-            const fieldValue = (record[field] as Record<string, unknown>)[fromLocale];
-            const fieldType = fieldTypeDictionary[field].editor;
-            const fieldTypePrompt = prepareFieldTypePrompt(fieldType);
-          
-            // Translate the individual field
-            const translatedValue = await translateFieldValue(
-              fieldValue,
-              pluginParams,
-              toLocale,
-              fromLocale,
-              fieldType,
-              openai,
-              fieldTypePrompt,
-              accessToken,
-              fieldTypeDictionary[field].id,
-              ctx.environment,
-              undefined,
-              generateRecordContext(record as Record<string, unknown>, fromLocale)
-            );
+            const sourceValue = currentLocalizedData[fromLocale];
 
-            (translatedFields[field] as Record<string, unknown>)[toLocale] = translatedValue;
-            
-            // Update on field translation completion
-            addProgressUpdate({
-              recordIndex: i,
-              recordId: record.id,
-              status: 'processing',
-              message: `Completed field '${field}' (${fieldIndex + 1}/${translatableFields.length}) in record ID: ${record.id}`
-            });
+            if (sourceValue === null || sourceValue === undefined || sourceValue === '') {
+              (payloadForUpdate[field] as Record<string, unknown>)[toLocale] = null;
+              addProgressUpdate({
+                recordIndex: i,
+                recordId: record.id,
+                status: 'processing',
+                message: `Field '${field}' is null/empty in source, setting to null in target for record ID: ${record.id}`
+              });
+            } else {
+              const fieldType = fieldTypeDictionary[field].editor;
+              const fieldTypePrompt = prepareFieldTypePrompt(fieldType);
+              const translatedValue = await translateFieldValue(
+                sourceValue,
+                pluginParams,
+                toLocale,
+                fromLocale,
+                fieldType,
+                openai,
+                fieldTypePrompt,
+                accessToken,
+                fieldTypeDictionary[field].id,
+                ctx.environment,
+                undefined,
+                generateRecordContext(record as Record<string, unknown>, fromLocale)
+              );
+              (payloadForUpdate[field] as Record<string, unknown>)[toLocale] = translatedValue;
+              addProgressUpdate({
+                recordIndex: i,
+                recordId: record.id,
+                status: 'processing',
+                message: `Completed field '${field}' (${translatableFields.indexOf(field) + 1}/${translatableFields.length}) in record ID: ${record.id}`
+              });
+            }
           } catch (fieldError) {
-            // Handle field-level error
+            (payloadForUpdate[field] as Record<string, unknown>)[toLocale] = null; // Set to null on error
             addProgressUpdate({
               recordIndex: i,
               recordId: record.id,
-              status: 'processing',
-              message: `Error translating field '${field}': ${fieldError instanceof Error ? fieldError.message : String(fieldError)}`
+              status: 'processing', // Keep as processing, error is field-specific
+              message: `Error translating field '${field}' for record ID ${record.id}: ${fieldError instanceof Error ? fieldError.message : String(fieldError)}. Setting to null.`
             });
           }
         }
         
-        // Update processing status for saving
+        // Step 2: Ensure all localized fields (from schema) are in the payload with the target locale.
+        for (const fieldApiKey in fieldTypeDictionary) {
+          if (fieldTypeDictionary[fieldApiKey].isLocalized) {
+            if (!payloadForUpdate[fieldApiKey]) {
+              // This localized field was not in translatableFields (e.g. empty in source, or not on record yet).
+              // Initialize it with its existing data (if any from original record) and add toLocale: null.
+              payloadForUpdate[fieldApiKey] = {
+                ...((record[fieldApiKey] as Record<string, unknown>) || {}), // Start with existing locales of this field from the record
+              };
+              // Explicitly set toLocale to null if not already processed
+              if (!(toLocale in (payloadForUpdate[fieldApiKey] as Record<string, unknown>))) {
+                (payloadForUpdate[fieldApiKey] as Record<string, unknown>)[toLocale] = null;
+              }
+            } else {
+              // Field was in translatableFields. Ensure toLocale key is present (should be by now).
+              // This is a safeguard.
+              if (!(toLocale in (payloadForUpdate[fieldApiKey] as Record<string, unknown>))) {
+                (payloadForUpdate[fieldApiKey] as Record<string, unknown>)[toLocale] = null;
+              }
+            }
+          }
+        }
+        
         addProgressUpdate({
           recordIndex: i,
           recordId: record.id,
@@ -228,11 +246,8 @@ export default function TranslationProgressModal({ ctx, parameters }: Translatio
           message: `Saving translated content for record ID: ${record.id}...`
         });
 
-        await client.items.update(record.id, {
-          ...translatedFields
-        });
+        await client.items.update(record.id, payloadForUpdate);
 
-        // Update progress to 'completed'
         addProgressUpdate({
           recordIndex: i,
           recordId: record.id,
