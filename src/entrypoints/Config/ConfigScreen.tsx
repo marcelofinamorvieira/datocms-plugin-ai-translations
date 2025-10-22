@@ -19,7 +19,7 @@ import {
   TextField,
 } from 'datocms-react-ui';
 import s from '../styles.module.css';
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useState, useMemo, useCallback } from 'react';
 import ReactTextareaAutosize from 'react-textarea-autosize';
 import { defaultPrompt } from '../../prompts/DefaultPrompt';
 import { buildClient } from '@datocms/cma-client-browser';
@@ -309,28 +309,37 @@ export default function ConfigScreen({ ctx }: { ctx: RenderConfigScreenCtx }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [recommendedModel]);
 
+  const normalizeList = useCallback((list?: string[]) => {
+    return Array.isArray(list) ? [...list].sort().join(',') : '';
+  }, []);
+
   /**
    * Checks if the user has changed any of the config fields,
    * so we can enable or disable the "Save" button accordingly.
    */
   const isFormDirty = useMemo(() => {
+    const sortedSelectedFields = [...translationFields].sort().join(',');
+    const sortedConfiguredFields =
+      pluginParams.translationFields
+        ? [...pluginParams.translationFields].sort().join(',')
+        : Object.keys(translateFieldTypes).sort().join(',');
+    const sortedSelectedModels = [...modelsToBeExcluded].sort().join(',');
+    const sortedConfiguredModels = normalizeList(pluginParams.modelsToBeExcludedFromThisPlugin);
+    const sortedSelectedRoles = [...rolesToBeExcluded].sort().join(',');
+    const sortedConfiguredRoles = normalizeList(pluginParams.rolesToBeExcludedFromThisPlugin);
+    const sortedSelectedApiKeys = [...apiKeysToBeExcluded].sort().join(',');
+    const sortedConfiguredApiKeys = normalizeList(pluginParams.apiKeysToBeExcludedFromThisPlugin);
+
     return (
       apiKey !== (pluginParams.apiKey ?? '') ||
       gptModel !== (pluginParams.gptModel ?? 'None') ||
-      translationFields.sort().join(',') !==
-        (pluginParams.translationFields?.sort().join(',') ??
-          Object.keys(translateFieldTypes).sort().join(',')) ||
+      sortedSelectedFields !== sortedConfiguredFields ||
       translateWholeRecord !== (pluginParams.translateWholeRecord ?? true) ||
       translateBulkRecords !== (pluginParams.translateBulkRecords ?? true) ||
       prompt !== (pluginParams.prompt ?? defaultPrompt) ||
-      modelsToBeExcluded.sort().join(',') !==
-        (pluginParams.modelsToBeExcludedFromThisPlugin?.sort().join(',') ??
-          '') ||
-      rolesToBeExcluded.sort().join(',') !==
-        (pluginParams.rolesToBeExcludedFromThisPlugin?.sort().join(',') ??
-          '') ||
-      apiKeysToBeExcluded.sort().join(',') !==
-        (pluginParams.apiKeysToBeExcludedFromThisPlugin?.sort().join(',') ?? '') ||
+      sortedSelectedModels !== sortedConfiguredModels ||
+      sortedSelectedRoles !== sortedConfiguredRoles ||
+      sortedSelectedApiKeys !== sortedConfiguredApiKeys ||
       enableDebugging !== (pluginParams.enableDebugging ?? false)
     );
   }, [
@@ -344,6 +353,7 @@ export default function ConfigScreen({ ctx }: { ctx: RenderConfigScreenCtx }) {
     rolesToBeExcluded,
     apiKeysToBeExcluded,
     enableDebugging,
+    normalizeList,
     pluginParams.apiKey,
     pluginParams.gptModel,
     pluginParams.translationFields,
@@ -687,7 +697,7 @@ export default function ConfigScreen({ ctx }: { ctx: RenderConfigScreenCtx }) {
             fullWidth
             disabled={
               gptModel === 'None' ||
-              (translationFields.sort().join(',') ===
+              ([...translationFields].sort().join(',') ===
                 Object.keys(translateFieldTypes).sort().join(',') &&
                 translateWholeRecord === true &&
                 translateBulkRecords === true &&

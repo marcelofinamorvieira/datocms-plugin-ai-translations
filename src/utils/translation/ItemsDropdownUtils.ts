@@ -25,23 +25,38 @@ export type DatoCMSRecordFromAPI = {
  * @returns Object with fromLocale and toLocale.
  */
 export function parseActionId(actionId: string): { fromLocale: string; toLocale: string } {
-  // Action ID format is typically: "translateRecord-en-pt-BR" or "translateRecord-en-pt"
-  // First we need to remove the prefix
-  const prefix = "translateRecord-";
+  // Action ID format is: "translateRecord-${fromLocale}-${toLocale}"
+  const prefix = 'translateRecord-';
   const localesString = actionId.startsWith(prefix) ? actionId.substring(prefix.length) : actionId;
 
-  // Split by the first hyphen to separate source and target locales
-  const firstHyphenIndex = localesString.indexOf('-');
-  if (firstHyphenIndex === -1) {
-    // Fallback if format is unexpected
+  // Split into components and attempt to rebuild both locale segments.
+  const parts = localesString.split('-');
+  if (parts.length < 2) {
     console.error(`Invalid action ID format: ${actionId}`);
     return { fromLocale: 'en', toLocale: 'en' };
   }
 
-  const fromLocale = localesString.substring(0, firstHyphenIndex);
-  const toLocale = localesString.substring(firstHyphenIndex + 1);
+  const isLikelyLocale = (candidate: string) => {
+    const [language, ...rest] = candidate.split('-');
+    if (!language || !/^[a-z]{2,3}$/.test(language)) {
+      return false;
+    }
+    return rest.every((segment) => /^[A-Za-z0-9]{2,8}$/.test(segment));
+  };
 
-  return { fromLocale, toLocale };
+  for (let splitIndex = 1; splitIndex < parts.length; splitIndex++) {
+    const fromCandidate = parts.slice(0, splitIndex).join('-');
+    const toCandidate = parts.slice(splitIndex).join('-');
+
+    if (isLikelyLocale(fromCandidate) && isLikelyLocale(toCandidate)) {
+      return { fromLocale: fromCandidate, toLocale: toCandidate };
+    }
+  }
+
+  // Fallback: assume the first segment is the source; rest is the target.
+  const fallbackFrom = parts[0];
+  const fallbackTo = parts.slice(1).join('-') || fallbackFrom;
+  return { fromLocale: fallbackFrom, toLocale: fallbackTo };
 }
 
 /**
@@ -295,6 +310,7 @@ export async function buildTranslatedUpdatePayload(
   opts: { abortSignal?: AbortSignal; checkCancelled?: () => boolean } = {}
 ): Promise<Record<string, unknown>> {
   const updatePayload: Record<string, Record<string, unknown>> = {};
+  const excludedFieldIds = new Set(pluginParams.apiKeysToBeExcludedFromThisPlugin ?? []);
 
   // Initialize payload with all localized fields from the record's schema
   // to ensure they are all considered.
@@ -307,7 +323,9 @@ export async function buildTranslatedUpdatePayload(
 
   // Process fields that are present on the record and should be translated
   for (const field in record) {
-    if (!fieldTypeDictionary[field]?.isLocalized) {
+    const fieldMeta = fieldTypeDictionary[field];
+
+    if (!fieldMeta?.isLocalized) {
       // Skip non-localized fields or fields not in the current item type's schema dictionary
       continue;
     }
@@ -317,7 +335,17 @@ export async function buildTranslatedUpdatePayload(
     if (!updatePayload[field]) {
       updatePayload[field] = (record[field] as Record<string, unknown>) || {};
     }
-    
+
+    // Respect field exclusion list configured in the plugin settings
+    if (excludedFieldIds.has(fieldMeta.id)) {
+      // Preserve existing target locale value when present and skip translation
+      const existing = (record[field] as Record<string, unknown>) || {};
+      if (existing && toLocale in existing) {
+        updatePayload[field][toLocale] = existing[toLocale];
+      }
+      continue;
+    }
+
     if (!shouldTranslateField(field, record, fromLocale, fieldTypeDictionary)) {
       // If not translatable (e.g., source empty), but is localized, ensure toLocale: null is set
       // if it's not already present.
@@ -371,13 +399,17 @@ export async function buildTranslatedUpdatePayload(
   // This catches localized fields that might not have been on the original `record` object
   // or were not processed in the loop above for any reason.
   for (const fieldApiKey in fieldTypeDictionary) {
-    if (fieldTypeDictionary[fieldApiKey].isLocalized) {
+    const fieldMeta = fieldTypeDictionary[fieldApiKey];
+    if (fieldMeta.isLocalized) {
       if (!updatePayload[fieldApiKey]) {
         // Localized field from schema not yet in payload (e.g., was not on 'record' object)
         updatePayload[fieldApiKey] = {}; // Initialize as empty object
       }
       // If toLocale is still not set for this localized field, default it to null.
-      if (!(toLocale in updatePayload[fieldApiKey])) {
+      if (
+        !excludedFieldIds.has(fieldMeta.id) &&
+        !(toLocale in updatePayload[fieldApiKey])
+      ) {
         updatePayload[fieldApiKey][toLocale] = null;
       }
     }

@@ -210,7 +210,10 @@ export default function TranslationProgressModal({ ctx, parameters }: Translatio
         <div className="TranslationProgressModal__updates">
           {progress.length > 0 ? (
             <ul className="TranslationProgressModal__update-list">
-              {progress.sort((a, b) => a.recordIndex - b.recordIndex).map((update) => (
+              {progress
+                .slice()
+                .sort((a, b) => a.recordIndex - b.recordIndex)
+                .map((update) => (
                 <li 
                   key={`${update.recordIndex}-${update.message}`}
                   className={`TranslationProgressModal__update-item TranslationProgressModal__update-item--${update.status}`}
