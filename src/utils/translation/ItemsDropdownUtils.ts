@@ -135,8 +135,12 @@ export type TranslateBatchOptions = {
 
 /**
  * Returns a user-friendly message for known DatoCMS API errors.
- * Specifically maps ITEM_LOCKED (422) to clear guidance that
- * no one can be editing the record to apply the translation.
+ * Specifically maps ITEM_LOCKED (422) to clear guidance that no one can be
+ * editing the record to apply the translation.
+ *
+ * @param error - The error thrown during the CMA request.
+ * @param recordId - Identifier of the record that failed to update.
+ * @returns A user-friendly message or null when no mapping matches.
  */
 function getFriendlyDatoErrorMessage(error: unknown, recordId: string): string | null {
   const anyErr = error as any;

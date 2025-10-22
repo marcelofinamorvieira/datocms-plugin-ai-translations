@@ -4,6 +4,9 @@ import OpenAI from 'openai';
  * Returns a relevance score for a model id for translation via Chat Completions.
  * Higher score means more preferred. This is a heuristic that prefers
  * general-purpose GPT-4.x chat models and de-prioritizes mini/nano variants.
+ *
+ * @param id - Candidate model identifier.
+ * @returns Numeric score representing preference weight.
  */
 function modelScore(id: string): number {
   const mid = id.toLowerCase();
@@ -32,9 +35,11 @@ function modelScore(id: string): number {
 }
 
 /**
- * Determine if a model id is relevant for text translation using
- * the Chat Completions API. Excludes embeddings, audio, vision-only,
- * moderation, realtime, and image models.
+ * Determine if a model id is relevant for text translation using the Chat Completions API.
+ * Excludes embeddings, audio, vision-only, moderation, realtime, and image models.
+ *
+ * @param id - Candidate model identifier.
+ * @returns True when the model is a viable chat model for translation.
  */
 export function isRelevantChatModel(id: string): boolean {
   const mid = id.toLowerCase();
@@ -66,6 +71,9 @@ export function isRelevantChatModel(id: string): boolean {
 /**
  * Fetch and return a sorted list of relevant OpenAI models for translation.
  * Sorting prefers quality/capability first, then variants (mini/nano), then name.
+ *
+ * @param apiKey - OpenAI API key used to list available models.
+ * @returns Sorted array of relevant chat model identifiers.
  */
 export async function listRelevantOpenAIModels(apiKey: string): Promise<string[]> {
   const client = new OpenAI({ apiKey, dangerouslyAllowBrowser: true });
