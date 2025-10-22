@@ -3,7 +3,7 @@ import { Canvas, SelectField, Button, Spinner } from 'datocms-react-ui';
 import { useEffect, useState } from 'react';
 import { buildDatoCMSClient } from '../../utils/clients';
 import type { ctxParamsType } from '../../entrypoints/Config/ConfigScreen';
-import '../styles.module.css';
+import s from './AIBulkTranslationsPage.module.css';
 // Light local equivalents of react-select types to avoid adding the package
 type SingleValue<T> = T | null;
 type MultiValue<T> = readonly T[];
@@ -182,70 +182,40 @@ export default function AIBulkTranslationsPage({ ctx }: PropTypes) {
 
   return (
     <Canvas ctx={ctx}>
-      <div style={{ 
-        minHeight: 'calc(100vh - 100px)', /* Account for any Canvas header/footer */
-        display: 'flex',
-        flexDirection: 'column',
-        justifyContent: 'flex-start',
-        alignItems: 'center',
-        padding: '80px 20px 20px 20px'
-      }}>
-        <div style={{ 
-          width: '100%',
-          maxWidth: '800px',
-          background: 'white', 
-          borderRadius: '8px', 
-          boxShadow: '0 2px 8px rgba(0, 0, 0, 0.1)',
-          padding: '24px',
-          marginBottom: '20px'
-        }}>
-          <div style={{ textAlign: 'center', marginBottom: '20px', borderBottom: '1px solid #eee', paddingBottom: '16px' }}>
-            <h1 style={{ fontSize: '24px', marginBottom: '8px' }}>AI Bulk Translations</h1>
-            <p style={{ color: '#666', marginBottom: '0px' }}>Select languages and models to perform bulk translations.</p>
-          </div>
-
-          {isLoading ? (
-            <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '30px' }}>
-              <div>
-                <Spinner size={40} />
-                <p style={{ marginTop: '16px', color: '#666' }}>Loading languages and models...</p>
-              </div>
+      <div className={s.page}>
+        <div className={s.container}>
+          <div className={s.card}>
+            <div className={s.cardHeader}>
+              <h1 className={s.cardTitle}>AI Bulk Translations</h1>
+              <p className={s.cardCaption}>Select languages and models to perform bulk translations.</p>
             </div>
-          ) : (
-            <div>
-              {/* Language selectors in the same row with a more compact design */}
-              <div style={{ 
-                display: 'flex', 
-                gap: '16px', 
-                justifyContent: 'space-between',
-                marginBottom: '20px',
-                padding: '16px',
-                background: '#f9f9f9',
-                borderRadius: '6px'
-              }}>
-                <div style={{ flex: 1 }}>
+
+            {/* Loading overlay */}
+            {isLoading && (
+              <div className={s.loadingOverlay}>
+                <Spinner size={40} />
+                <div className={s.loadingText}>Loading languages and models...</div>
+              </div>
+            )}
+
+            {/* Language selectors row */}
+            <div className={s.section}>
+              <div className={s.localeRow}>
+                <div>
                   <SelectField
                     name="sourceLocale"
                     id="sourceLocale"
                     label="Source Language"
                     hint="Translate from"
                     value={sourceLocale}
-                    selectInputProps={{
-                      options: locales,
-                    }}
+                    selectInputProps={{ options: locales }}
                     onChange={handleSourceLocaleChange}
                   />
                 </div>
-                <div style={{ 
-                  display: 'flex', 
-                  alignItems: 'center', 
-                  justifyContent: 'center',
-                  color: '#666',
-                  marginTop: '24px'
-                }}>
-                  <div style={{ fontWeight: 'bold', fontSize: '18px' }}>→</div>
+                <div className={s.localeArrow} aria-hidden>
+                  →
                 </div>
-                <div style={{ flex: 1 }}>
+                <div>
                   <SelectField
                     name="targetLocale"
                     id="targetLocale"
@@ -253,64 +223,54 @@ export default function AIBulkTranslationsPage({ ctx }: PropTypes) {
                     hint="Translate to"
                     value={targetLocale}
                     selectInputProps={{
-                      options: locales.filter(locale => locale.value !== sourceLocale?.value),
+                      options: locales.filter((locale) => locale.value !== sourceLocale?.value),
                     }}
                     onChange={handleTargetLocaleChange}
                   />
                 </div>
               </div>
-
-              {/* Models selector with improved styling */}
-              <div style={{ 
-                marginBottom: '24px',
-                padding: '16px',
-                background: '#f9f9f9',
-                borderRadius: '6px'
-              }}>
-                <SelectField
-                  name="selectedModels"
-                  id="selectedModels"
-                  label="Models to Translate"
-                  hint="Select one or more models to translate"
-                  value={selectedModels}
-                  selectInputProps={{
-                    isMulti: true,
-                    options: models,
-                  }}
-                  onChange={handleModelChange}
-                />
-                {selectedModels.length > 0 && (
-                  <div style={{ marginTop: '10px', fontSize: '14px', color: '#666' }}>
-                    Selected {selectedModels.length} {selectedModels.length === 1 ? 'model' : 'models'}
-                  </div>
-                )}
-              </div>
-
-              {/* Action button with improved styling */}
-              <div style={{ marginTop: '24px' }}>
-                <Button 
-                  buttonType="primary" 
-                  onClick={startTranslation}
-                  disabled={!sourceLocale || !targetLocale || selectedModels.length === 0}
-                  fullWidth
-                  style={{ padding: '12px', fontSize: '16px' }}
-                >
-                  Start Bulk Translation
-                </Button>
-                
-                {/* Additional helpful text */}
-                {(sourceLocale && targetLocale && selectedModels.length > 0) && (
-                  <div style={{ marginTop: '10px', fontSize: '13px', color: '#666', textAlign: 'center' }}>
-                    Ready to translate from {sourceLocale.label} to {targetLocale.label}
-                  </div>
-                )}
-              </div>
             </div>
-          )}
+
+            {/* Models selector */}
+            <div className={s.section}>
+              <SelectField
+                name="selectedModels"
+                id="selectedModels"
+                label="Models to Translate"
+                hint="Select one or more models to translate"
+                value={selectedModels}
+                selectInputProps={{ isMulti: true, options: models }}
+                onChange={handleModelChange}
+              />
+              {selectedModels.length > 0 && (
+                <div className={s.helperText}>
+                  Selected {selectedModels.length} {selectedModels.length === 1 ? 'model' : 'models'}
+                </div>
+              )}
+            </div>
+
+            {/* Actions */}
+            <div className={s.actions}>
+              <Button
+                buttonType="primary"
+                onClick={startTranslation}
+                disabled={!sourceLocale || !targetLocale || selectedModels.length === 0}
+                fullWidth
+              >
+                Start Bulk Translation
+              </Button>
+
+              {sourceLocale && targetLocale && selectedModels.length > 0 && (
+                <div className={`${s.helperText} ${s.statusReady}`}>
+                  Ready to translate from {sourceLocale.label} to {targetLocale.label}
+                </div>
+              )}
+            </div>
+          </div>
         </div>
-        
-        {/* Info footer */}
-        <div style={{ textAlign: 'center', fontSize: '13px', color: '#666', marginTop: '0', width: '100%', maxWidth: '800px' }}>
+
+        {/* Footer note */}
+        <div className={s.footerNote}>
           Translations are performed using AI. Review content after translation.
         </div>
       </div>

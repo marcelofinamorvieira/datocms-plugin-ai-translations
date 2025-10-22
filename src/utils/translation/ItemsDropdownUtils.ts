@@ -18,6 +18,52 @@ export type DatoCMSRecordFromAPI = {
 };
 
 /**
+ * Tries to derive a short human-friendly label for a record using common
+ * title-like fields. Falls back to the record ID when needed.
+ */
+function deriveRecordLabel(record: DatoCMSRecordFromAPI, preferredLocale: string): string {
+  const candidates = [
+    'title',
+    'name',
+    'headline',
+    'heading',
+    'label',
+    'internal_name',
+    'internalName',
+    'slug',
+  ];
+
+  const coerceToString = (val: unknown): string | null => {
+    if (val == null) return null;
+    if (typeof val === 'string') return val;
+    if (typeof val === 'number') return String(val);
+    if (Array.isArray(val)) return val.filter((x) => typeof x === 'string')[0] || null;
+    // Objects may be localized maps; try locale or any string value
+    if (typeof val === 'object') {
+      const localized = val as Record<string, unknown>;
+      const exact = getExactSourceValue(localized, preferredLocale);
+      if (typeof exact === 'string' && exact.trim()) return exact;
+      for (const v of Object.values(localized)) {
+        if (typeof v === 'string' && v.trim()) return v;
+      }
+    }
+    return null;
+  };
+
+  for (const key of candidates) {
+    if (record[key] !== undefined) {
+      const s = coerceToString(record[key]);
+      if (s && s.trim()) {
+        const trimmed = s.trim();
+        return trimmed.length > 80 ? trimmed.slice(0, 77) + '…' : trimmed;
+      }
+    }
+  }
+
+  return `Record ${record.id}`;
+}
+
+/**
  * Parses an items action ID into its source/target locales.
  * Properly handles hyphenated locales like "pt-BR".
  *
@@ -216,30 +262,37 @@ export async function translateAndUpdateRecords(
   accessToken: string,
   options: TranslateBatchOptions = {}
 ): Promise<void> {
-  const updateProgress = (u: ProgressUpdate) => options.onProgress?.(u);
+  const updateProgress = (u: ProgressUpdate) => {
+    // Normalize legacy in-progress message that included the word "fields"
+    if (u.status === 'processing' && typeof u.message === 'string') {
+      u = { ...u, message: u.message.replace(/\s*fields…$/, '…') };
+    }
+    options.onProgress?.(u);
+  };
 
   for (let i = 0; i < records.length; i++) {
     const record = records[i];
+    const recordLabel = deriveRecordLabel(record, fromLocale);
 
     // Cooperative cancellation
     if (options.checkCancelled?.()) {
-      updateProgress({ recordIndex: i, recordId: record.id, status: 'error', message: 'Translation cancelled by user' });
+      updateProgress({ recordIndex: i, recordId: record.id, status: 'error', message: `Translation cancelled for "${recordLabel}" (#${record.id}).` });
       return;
     }
 
-    updateProgress({ recordIndex: i, recordId: record.id, status: 'processing' });
+    updateProgress({ recordIndex: i, recordId: record.id, status: 'processing', message: `Translating "${recordLabel}" (#${record.id})…` });
 
     try {
       // Check if the record has the fromLocale key
       if (!hasKeyDeep(record as Record<string, unknown>, fromLocale)) {
-        const errorMsg = `Record does not have the source locale '${fromLocale}'`;
+        const errorMsg = `Record "${recordLabel}" (#${record.id}) does not have the source locale '${fromLocale}'`;
         console.error(`Record ${record.id} ${errorMsg}`);
         ctx.alert(`Error: Record ID ${record.id} ${errorMsg}`);
         updateProgress({ recordIndex: i, recordId: record.id, status: 'error', message: errorMsg });
         continue;
       }
 
-      updateProgress({ recordIndex: i, recordId: record.id, status: 'processing', message: 'Translating fields...' });
+      updateProgress({ recordIndex: i, recordId: record.id, status: 'processing', message: `Translating "${recordLabel}" (#${record.id}) fields…` });
 
       const fieldTypeDictionary = await getFieldTypeDictionary(record.item_type.id);
 
@@ -255,13 +308,19 @@ export async function translateAndUpdateRecords(
         { abortSignal: options.abortSignal, checkCancelled: options.checkCancelled }
       );
 
-      updateProgress({ recordIndex: i, recordId: record.id, status: 'processing', message: 'Saving translated content...' });
+      updateProgress({ recordIndex: i, recordId: record.id, status: 'processing', message: `Saving "${recordLabel}" (#${record.id})…` });
 
       await client.items.update(record.id, {
         ...translatedFields
       });
 
-      updateProgress({ recordIndex: i, recordId: record.id, status: 'completed' });
+      // Provide a message including the record label so the UI shows useful text
+      updateProgress({ 
+        recordIndex: i, 
+        recordId: record.id, 
+        status: 'completed', 
+        message: `Translated "${recordLabel}" (#${record.id}).`
+      });
     } catch (error) {
       // Try to detect DatoCMS-specific error codes for clearer UX
       const friendlyMessage = getFriendlyDatoErrorMessage(error, record.id);
@@ -272,7 +331,7 @@ export async function translateAndUpdateRecords(
         recordIndex: i,
         recordId: record.id,
         status: 'error',
-        message: friendlyMessage ?? `Translation failed: ${rawMessage}`,
+        message: friendlyMessage ?? `Failed "${recordLabel}" (#${record.id}): ${rawMessage}`,
       });
     }
   }

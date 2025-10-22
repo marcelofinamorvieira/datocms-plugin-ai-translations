@@ -224,7 +224,13 @@ export default function TranslationProgressModal({ ctx, parameters }: Translatio
                     {update.status === 'error' && '✗'}
                   </span>
                   <span className="TranslationProgressModal__update-message">
-                    {update.message}
+                    {update.message ?? (update.status === 'completed'
+                      ? 'Completed'
+                      : update.status === 'processing'
+                      ? 'Processing...'
+                      : update.status === 'error'
+                      ? 'Error'
+                      : '')}
                   </span>
                 </li>
               ))}
