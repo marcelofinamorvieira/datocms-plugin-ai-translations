@@ -1,3 +1,8 @@
+/**
+ * fieldPrompts.tsx
+ * Field-specific output format hints appended to the base prompt.
+ * Used to cue the LLM to return values in the expected DatoCMS field shape.
+ */
 export const fieldPrompt = {
   single_line: 'a single line string. Do not wrap the string in quotes',
   markdown:

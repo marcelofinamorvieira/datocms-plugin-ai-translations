@@ -201,3 +201,8 @@
 .streamingBubble:hover .fadeGradient {
   opacity: 0;
 }
+/*
+ * styles.module.css (shared)
+ * Shared CSS module for bubbles and common visuals across the plugin.
+ * Keep selectors class-based and avoid element selectors for safety.
+ */

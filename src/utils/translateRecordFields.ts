@@ -12,6 +12,11 @@
  * 5. Automatically updating form values with translated content
  * 
  * This serves as the foundation for the record-level translation features in the plugin.
+ *
+ * See also: `buildTranslatedUpdatePayload` in
+ * `src/utils/translation/ItemsDropdownUtils.ts` for the table/bulk flow that
+ * operates on CMA records and returns an update payload instead of writing to
+ * the form via `ctx.setFieldValue(...)`.
  */
 
 import type { RenderItemFormSidebarPanelCtx } from 'datocms-plugin-sdk';
@@ -20,39 +25,28 @@ import {
   type ctxParamsType,
   modularContentVariations,
 } from '../entrypoints/Config/ConfigScreen';
-import { fieldPrompt } from '../prompts/FieldPrompts';
+import { prepareFieldTypePrompt, getExactSourceValue } from './translation/SharedFieldUtils';
 import { translateFieldValue, generateRecordContext } from './translation/TranslateField';
+import { createLogger } from './logging/Logger';
 
-/**
- * Options interface for the translation process
- * 
- * Provides callback hooks that allow the UI to respond to translation events
- * and enables cancellation support for long-running translations.
- * 
- * @interface TranslateOptions
- * @property {Function} onStart - Called when translation starts for a field-locale pair
- * @property {Function} onComplete - Called when translation completes for a field-locale pair
- * @property {Function} onStream - Called with incremental translation results
- * @property {Function} checkCancellation - Function to check if translation should be cancelled
- * @property {AbortSignal} abortSignal - Signal for aborting translation operation
- */
+// Options for the translation process. Provides callback hooks that allow the
+// UI to respond to translation events and enables cancellation support for
+// long-running translations.
 type TranslateOptions = {
   onStart?: (fieldLabel: string, locale: string, fieldPath: string) => void;
-  onComplete?: (fieldLabel: string, locale: string) => void;
-  onStream?: (fieldLabel: string, locale: string, content: string) => void;
+  onComplete?: (fieldLabel: string, locale: string, fieldPath: string) => void;
+  onStream?: (
+    fieldLabel: string,
+    locale: string,
+    fieldPath: string,
+    content: string
+  ) => void;
   checkCancellation?: () => boolean;
   abortSignal?: AbortSignal;
 };
 
-/**
- * Interface for a field with localized values
- * 
- * Represents a map where keys are locale codes and values are the field content
- * in that specific locale.
- * 
- * @interface LocalizedField
- * @property {unknown} [locale] - Field value for the specified locale
- */
+// Represents a map where keys are locale codes and values are the field
+// content in that specific locale.
 interface LocalizedField {
   [locale: string]: unknown;
 }
@@ -70,12 +64,12 @@ interface LocalizedField {
  * Translation can be cancelled at any point using the checkCancellation callback
  * or the abortSignal.
  * 
- * @param {RenderItemFormSidebarPanelCtx} ctx - DatoCMS sidebar context providing access to form values and fields
- * @param {ctxParamsType} pluginParams - Plugin configuration parameters
- * @param {string[]} targetLocales - Array of locale codes to translate into
- * @param {string} sourceLocale - Source locale code to translate from
- * @param {TranslateOptions} options - Optional callbacks and cancellation controls
- * @returns {Promise<void>} - Resolves when all translations are complete or cancelled
+ * @param ctx - DatoCMS sidebar context providing access to form values and fields
+ * @param pluginParams - Plugin configuration parameters
+ * @param targetLocales - Array of locale codes to translate into
+ * @param sourceLocale - Source locale code to translate from
+ * @param options - Optional callbacks and cancellation controls
+ * @returns Resolves when all translations are complete or cancelled
  */
 export async function translateRecordFields(
   ctx: RenderItemFormSidebarPanelCtx,
@@ -84,6 +78,7 @@ export async function translateRecordFields(
   sourceLocale: string,
   options: TranslateOptions = {}
 ): Promise<void> {
+  const logger = createLogger(pluginParams, 'translateRecordFields');
   // Initialize OpenAI client for translation
   const openai = new OpenAI({
     apiKey: pluginParams.apiKey,
@@ -92,12 +87,26 @@ export async function translateRecordFields(
 
   const currentFormValues = ctx.formValues;
 
+  // Precompute record context once per run (was recomputed per field-locale)
+  const recordContext = generateRecordContext(currentFormValues, sourceLocale);
+
+  // Throttle streaming UI updates to ~30fps per fieldPath
+  const STREAM_THROTTLE_MS = 33;
+  const lastStreamAt = new Map<string, number>();
+
   // Get all fields that belong to the current item type
   const fieldsArray = Object.values(ctx.fields).filter(
     (field) => field?.relationships.item_type.data.id === ctx.itemType.id
   );
 
-  // Process each field
+  // Small helper to yield to the UI thread to avoid visible stalls
+  const nextFrame = () =>
+    new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+
+  // Build a list of jobs (each field-locale translation) to run with adaptive concurrency
+  type Job = { id: string; run: () => Promise<void>; retries: number };
+  const jobs: Job[] = [];
+
   for (const field of fieldsArray) {
     if (!field || !field.attributes) {
       continue; // Skip invalid fields
@@ -134,18 +143,21 @@ export async function translateRecordFields(
       continue;
     }
 
-    // Skip if source locale value doesn't exist
-    if (
-      !(fieldValue &&
-        typeof fieldValue === 'object' &&
-        !Array.isArray(fieldValue) &&
-        fieldValue[sourceLocale as keyof typeof fieldValue])
-    ) {
+    // Skip if field is not an object of localized values
+    if (!(fieldValue && typeof fieldValue === 'object' && !Array.isArray(fieldValue))) {
       continue;
     }
 
-    const sourceLocaleValue =
-      fieldValue[sourceLocale as keyof typeof fieldValue];
+    // Resolve exact-cased locale key and pull its value
+    const sourceLocaleValue = getExactSourceValue(
+      fieldValue as Record<string, unknown>,
+      sourceLocale
+    );
+
+    // Skip if source locale missing or empty
+    if (sourceLocaleValue === undefined || sourceLocaleValue === null || sourceLocaleValue === '') {
+      continue;
+    }
 
     // Skip empty modular content arrays
     if (
@@ -158,67 +170,139 @@ export async function translateRecordFields(
     // Use field label for UI display, falling back to API key if no label is defined
     const fieldLabel = field.attributes.label || field.attributes.api_key;
 
-    // Process each target locale for this field
+    // Process each target locale for this field as tasks
     for (const locale of targetLocales) {
-      // Check for cancellation before starting each locale
-      if (options.checkCancellation?.()) {
-        return; // Exit if translation was cancelled
-      }
-      
-      // Notify translation start for this field-locale pair
-      options.onStart?.(
-        fieldLabel,
-        locale,
-        `${field.attributes.api_key}.${locale}`
-      );
+      const fieldPath = `${field.attributes.api_key}.${locale}`;
+      const fieldTypePrompt = prepareFieldTypePrompt(fieldType);
 
-      // Prepare specialized prompt for the field type
-      let fieldTypePrompt = 'Return the response in the format of ';
-      const fieldPromptObject = fieldPrompt;
-      const baseFieldPrompts = fieldPromptObject ? fieldPromptObject : {};
+      jobs.push({ id: fieldPath, retries: 0, run: async () => {
+        // Cancellation check before starting
+        if (options.checkCancellation?.()) return;
 
-      // Structured and rich text fields use specialized prompts defined elsewhere
-      if (fieldType !== 'structured_text' && fieldType !== 'rich_text') {
-        fieldTypePrompt +=
-          baseFieldPrompts[fieldType as keyof typeof baseFieldPrompts] || '';
-      }
+        const start = performance.now?.() ?? Date.now();
+        options.onStart?.(fieldLabel, locale, fieldPath);
 
-      // Set up streaming callbacks to provide real-time updates for this translation
-      const streamCallbacks = {
-        onStream: (chunk: string) => {
-          options.onStream?.(fieldLabel, locale, chunk);
-        },
-        onComplete: () => {
-          options.onComplete?.(fieldLabel, locale);
-        },
-        checkCancellation: options.checkCancellation,
-        abortSignal: options.abortSignal
-      };
+        // Set up streaming callbacks to provide real-time updates
+        const streamCallbacks = {
+          onStream: (chunk: string) => {
+            const now = Date.now();
+            const last = lastStreamAt.get(fieldPath) ?? 0;
+            if (now - last >= STREAM_THROTTLE_MS) {
+              lastStreamAt.set(fieldPath, now);
+              options.onStream?.(fieldLabel, locale, fieldPath, chunk);
+            }
+          },
+          onComplete: () => {
+            options.onComplete?.(fieldLabel, locale, fieldPath);
+          },
+          checkCancellation: options.checkCancellation,
+          abortSignal: options.abortSignal,
+        };
 
-      // Generate context about the record to improve translation quality
-      const recordContext = generateRecordContext(ctx.formValues, sourceLocale);
+        // Perform the actual translation with streaming support
+        const translatedFieldValue = await translateFieldValue(
+          (fieldValue as LocalizedField)[sourceLocale],
+          pluginParams,
+          locale,
+          sourceLocale,
+          fieldType,
+          openai,
+          fieldTypePrompt,
+          ctx.currentUserAccessToken as string,
+          field.id,
+          ctx.environment,
+          streamCallbacks,
+          recordContext
+        );
 
-      // Perform the actual translation with streaming support
-      const translatedFieldValue = await translateFieldValue(
-        (fieldValue as LocalizedField)[sourceLocale],
-        pluginParams,
-        locale,
-        sourceLocale,
-        fieldType,
-        openai,
-        fieldTypePrompt,
-        ctx.currentUserAccessToken as string,
-        field.id,
-        ctx.environment,
-        streamCallbacks,
-        recordContext
-      );
-
-      // Update the form with the newly translated value
-      ctx.setFieldValue(
-        `${field.attributes.api_key}.${locale}`,
-        translatedFieldValue
-      );
+        // Yield one frame to let UI apply the 'done' animation before writing the form value
+        await nextFrame();
+        ctx.setFieldValue(fieldPath, translatedFieldValue);
+        const end = performance.now?.() ?? Date.now();
+        logger.info('Task finished', { fieldPath, ms: Math.round(end - start) });
+      }});
     }
   }
+
+  // Adaptive concurrency scheduler with simple AIMD (additive-increase, multiplicative-decrease)
+  // Derive a sensible cap from the chosen model; scheduler auto-tunes under this
+  const model = String(pluginParams.gptModel || '').toLowerCase();
+  const MAX_CAP = (() => {
+    if (/(^|-)nano$/.test(model) || model.includes('nano')) return 6;
+    if (/(^|-)mini$/.test(model) || model.includes('mini')) return 5;
+    // heavier general models
+    return 3;
+  })();
+  let currentConcurrency = MAX_CAP; // start at configured cap
+  let active = 0;
+  let nextIndex = 0;
+  let successStreak = 0;
+  const MAX_RETRIES = 3;
+
+  const isCancelled = () => !!options.checkCancellation?.();
+
+  const isRateLimitError = (err: unknown): boolean => {
+    const anyErr = err as { status?: number; code?: string; message?: string };
+    return (
+      anyErr?.status === 429 ||
+      anyErr?.code === 'rate_limit_exceeded' ||
+      /\b429\b|rate limit|Too Many Requests/i.test(String(anyErr?.message))
+    );
+  };
+
+  const delay = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+  let resolveDone: () => void;
+  const done = new Promise<void>((r) => (resolveDone = r));
+
+  const schedule = () => {
+    if (isCancelled()) {
+      if (active === 0) resolveDone();
+      return;
+    }
+    while (active < currentConcurrency && nextIndex < jobs.length) {
+      const idx = nextIndex++;
+      const job = jobs[idx];
+      active++;
+      job
+        .run()
+        .then(() => {
+          successStreak += 1;
+          if (successStreak >= 3 && currentConcurrency < MAX_CAP) {
+            currentConcurrency += 1;
+            successStreak = 0;
+            logger.info('Increased concurrency', { currentConcurrency });
+          }
+        })
+        .catch(async (err) => {
+          successStreak = 0;
+          if (isRateLimitError(err) && job.retries < MAX_RETRIES) {
+            job.retries += 1;
+            currentConcurrency = Math.max(1, Math.ceil(currentConcurrency / 2));
+            logger.warning('Rate limit detected; backing off', {
+              job: job.id,
+              retries: job.retries,
+              currentConcurrency,
+            });
+            // Requeue with exponential backoff
+            await delay(400 * job.retries);
+            jobs.push(job);
+          } else {
+            logger.error('Job failed', { job: job.id, err });
+            // No requeue; bubble remains in its last visual state
+          }
+        })
+        .finally(() => {
+          active--;
+          if (nextIndex >= jobs.length && active === 0) {
+            resolveDone();
+          } else {
+            schedule();
+          }
+        });
+    }
+  };
+
+  schedule();
+  await done;
 }

@@ -253,3 +253,8 @@
 .inspector {
   margin-top: var(--spacing-l);
 }
+/*
+ * styles.module.css (entrypoints)
+ * Scoped CSS module for entrypoint UI elements (tooltips, layout hints).
+ * Prefer CSS modules to avoid global leakage in the DatoCMS iframe.
+ */

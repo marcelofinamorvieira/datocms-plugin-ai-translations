@@ -4,9 +4,9 @@
 import type { buildClient } from '@datocms/cma-client-browser';
 import type OpenAI from 'openai';
 import type { ctxParamsType } from '../../entrypoints/Config/ConfigScreen';
-import type { ExecuteItemsDropdownActionCtx } from 'datocms-plugin-sdk';
-import { translateFieldValue, generateRecordContext, findExactLocaleKey } from './TranslateField';
-import { fieldPrompt } from '../../prompts/FieldPrompts';
+// no specific ctx type required here; we accept a minimal ctx shape
+import { translateFieldValue, generateRecordContext } from './TranslateField';
+import { prepareFieldTypePrompt, getExactSourceValue, type FieldTypeDictionary } from './SharedFieldUtils';
 
 /**
  * Defines a DatoCMS record structure with common fields
@@ -18,8 +18,11 @@ export type DatoCMSRecordFromAPI = {
 };
 
 /**
- * Parses the action ID to extract fromLocale and toLocale
- * Properly handles hyphenated locales like "pt-BR"
+ * Parses an items action ID into its source/target locales.
+ * Properly handles hyphenated locales like "pt-BR".
+ *
+ * @param actionId - The action identifier (e.g. `translateRecord-en-pt-BR`).
+ * @returns Object with fromLocale and toLocale.
  */
 export function parseActionId(actionId: string): { fromLocale: string; toLocale: string } {
   // Action ID format is typically: "translateRecord-en-pt-BR" or "translateRecord-en-pt"
@@ -42,8 +45,12 @@ export function parseActionId(actionId: string): { fromLocale: string; toLocale:
 }
 
 /**
- * Fetches records with pagination based on item IDs
- * Always retrieves the most recent draft state
+ * Fetches records with pagination based on item IDs.
+ * Always retrieves the most recent draft state.
+ *
+ * @param client - CMA client instance.
+ * @param itemIds - Array of record IDs to fetch.
+ * @returns An array of CMA records.
  */
 export async function fetchRecordsWithPagination(
   client: ReturnType<typeof buildClient>, 
@@ -75,9 +82,9 @@ export async function fetchRecordsWithPagination(
   return allRecords;
 }
 
-/**
- * Checks if an object has a specific key (including in nested objects)
- * Supports both regular locale codes and hyphenated locales (e.g., "pt-br")
+/*
+ * Checks if an object has a specific key (including in nested objects).
+ * Supports both regular locale codes and hyphenated locales (e.g., "pt-br").
  */
 function hasKeyDeep(obj: Record<string, unknown>, targetKey: string): boolean {
   if (!obj || typeof obj !== 'object') return false;
@@ -102,7 +109,81 @@ function hasKeyDeep(obj: Record<string, unknown>, targetKey: string): boolean {
 }
 
 /**
- * Translates and updates all records
+ * Status flags for batch translation steps.
+ */
+export type ProgressStatus = 'processing' | 'completed' | 'error';
+
+/**
+ * Progress event payload describing the per-record state.
+ */
+export type ProgressUpdate = {
+  recordIndex: number;
+  recordId: string;
+  status: ProgressStatus;
+  message?: string;
+};
+
+/**
+ * Options for batch translation flow, including progress and cancellation.
+ */
+export type TranslateBatchOptions = {
+  onProgress?: (update: ProgressUpdate) => void;
+  checkCancelled?: () => boolean;
+  abortSignal?: AbortSignal;
+};
+
+
+/**
+ * Returns a user-friendly message for known DatoCMS API errors.
+ * Specifically maps ITEM_LOCKED (422) to clear guidance that
+ * no one can be editing the record to apply the translation.
+ */
+function getFriendlyDatoErrorMessage(error: unknown, recordId: string): string | null {
+  const anyErr = error as any;
+  const candidates =
+    anyErr?.response?.data?.errors ||
+    anyErr?.response?.errors ||
+    anyErr?.data?.errors ||
+    anyErr?.errors;
+
+  const extractCode = (e: any) => e?.attributes?.code || e?.code || null;
+
+  try {
+    if (Array.isArray(candidates)) {
+      const codes: Array<string | null> = candidates.map(extractCode);
+      if (codes.includes('ITEM_LOCKED')) {
+        return `Cannot save translations for record ${recordId}: the record is locked because it is being edited. Please ensure no one (including you in another tab) is editing the record in DatoCMS, then try again.`;
+      }
+    }
+
+    const msg: string | undefined =
+      typeof anyErr?.message === 'string' ? anyErr.message : undefined;
+    if (msg && msg.includes('ITEM_LOCKED')) {
+      return `Cannot save translations for record ${recordId}: the record is locked because it is being edited. Please ensure no one is editing the record, then try again.`;
+    }
+  } catch {
+    // Ignore parsing errors; fall through to null
+  }
+
+  return null;
+}
+
+ 
+
+/**
+ * Translates and updates a list of records using CMA, reporting progress
+ * via callbacks and supporting cancellation.
+ *
+ * @param records - Records to translate.
+ * @param client - CMA client.
+ * @param openai - OpenAI client for field translation.
+ * @param fromLocale - Source locale key.
+ * @param toLocale - Target locale key.
+ * @param getFieldTypeDictionary - Async getter that returns a FieldTypeDictionary per item type.
+ * @param pluginParams - Plugin configuration parameters.
+ * @param ctx - Minimal context for alerts and environment.
+ * @param accessToken - Current user API token for DatoCMS.
+ * @param options - Optional callbacks and AbortSignal for cancellation.
  */
 export async function translateAndUpdateRecords(
   records: DatoCMSRecordFromAPI[],
@@ -110,105 +191,104 @@ export async function translateAndUpdateRecords(
   openai: OpenAI,
   fromLocale: string,
   toLocale: string,
-  fieldTypeDictionary: Record<string, { editor: string; id: string; isLocalized: boolean }>,
+  getFieldTypeDictionary: (itemTypeId: string) => Promise<FieldTypeDictionary>,
   pluginParams: ctxParamsType,
-  ctx: ExecuteItemsDropdownActionCtx
+  ctx: { alert: (msg: string) => void; environment: string },
+  accessToken: string,
+  options: TranslateBatchOptions = {}
 ): Promise<void> {
-  // Helper function to send progress updates to the modal
-  const updateProgress = (recordIndex: number, recordId: string, status: 'processing' | 'completed' | 'error', message?: string) => {
-    interface WindowWithProgressUpdate extends Window {
-      __translationProgressUpdate?: (update: {
-        recordIndex: number;
-        recordId: string;
-        status: 'processing' | 'completed' | 'error';
-        message?: string;
-      }) => void;
-    }
-    
-    const win = window as unknown as WindowWithProgressUpdate;
-    if (typeof win.__translationProgressUpdate === 'function') {
-      win.__translationProgressUpdate({
-        recordIndex,
-        recordId,
-        status,
-        message
-      });
-    }
-  };
-  
+  const updateProgress = (u: ProgressUpdate) => options.onProgress?.(u);
+
   for (let i = 0; i < records.length; i++) {
     const record = records[i];
-    
-    // Check if translation was cancelled by the user
-    interface WindowWithCancellation extends Window {
-      __translationCancelled?: boolean;
-    }
-    
-    const win = window as unknown as WindowWithCancellation;
-    if (win.__translationCancelled) {
-      updateProgress(i, record.id, 'error', 'Translation cancelled by user');
+
+    // Cooperative cancellation
+    if (options.checkCancelled?.()) {
+      updateProgress({ recordIndex: i, recordId: record.id, status: 'error', message: 'Translation cancelled by user' });
       return;
     }
-    
-    // Update progress to 'processing'
-    updateProgress(i, record.id, 'processing');
-    
+
+    updateProgress({ recordIndex: i, recordId: record.id, status: 'processing' });
+
     try {
       // Check if the record has the fromLocale key
       if (!hasKeyDeep(record as Record<string, unknown>, fromLocale)) {
         const errorMsg = `Record does not have the source locale '${fromLocale}'`;
         console.error(`Record ${record.id} ${errorMsg}`);
         ctx.alert(`Error: Record ID ${record.id} ${errorMsg}`);
-        updateProgress(i, record.id, 'error', errorMsg);
-        continue; // Skip to the next record
+        updateProgress({ recordIndex: i, recordId: record.id, status: 'error', message: errorMsg });
+        continue;
       }
-      
-      // Update processing status with more details
-      updateProgress(i, record.id, 'processing', 'Translating fields...');
-      
-      const translatedFields = await translateRecordFields(
+
+      updateProgress({ recordIndex: i, recordId: record.id, status: 'processing', message: 'Translating fields...' });
+
+      const fieldTypeDictionary = await getFieldTypeDictionary(record.item_type.id);
+
+      const translatedFields = await buildTranslatedUpdatePayload(
         record,
         fromLocale,
         toLocale,
         fieldTypeDictionary,
         openai,
         pluginParams,
-        ctx.currentUserAccessToken || '',
-        ctx.environment
+        accessToken,
+        ctx.environment,
+        { abortSignal: options.abortSignal, checkCancelled: options.checkCancelled }
       );
-      
-      // Update processing status for saving
-      updateProgress(i, record.id, 'processing', 'Saving translated content...');
+
+      updateProgress({ recordIndex: i, recordId: record.id, status: 'processing', message: 'Saving translated content...' });
 
       await client.items.update(record.id, {
         ...translatedFields
       });
 
-      // Update progress to 'completed'
-      updateProgress(i, record.id, 'completed');
+      updateProgress({ recordIndex: i, recordId: record.id, status: 'completed' });
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      console.error(`Error translating record ${record.id}:`, errorMessage);
-      updateProgress(i, record.id, 'error', `Translation failed: ${errorMessage}`);
+      // Try to detect DatoCMS-specific error codes for clearer UX
+      const friendlyMessage = getFriendlyDatoErrorMessage(error, record.id);
+      const rawMessage = error instanceof Error ? error.message : String(error);
+
+      console.error(`Error translating record ${record.id}:`, rawMessage);
+      updateProgress({
+        recordIndex: i,
+        recordId: record.id,
+        status: 'error',
+        message: friendlyMessage ?? `Translation failed: ${rawMessage}`,
+      });
     }
   }
-  
-  // Don't show the notice here since we're managing feedback through the modal
-  // instead of ctx.notice('Record translated successfully');
 }
 
 /**
- * Translates all fields for a single record
+ * Builds an update payload with translated values for an API-fetched record.
+ *
+ * Context: table/bulk actions using CMA records (client.items.*). Returns a
+ * payload suitable for `client.items.update(recordId, payload)`.
+ *
+ * See also: `translateRecordFields` in `src/utils/translateRecordFields.ts`,
+ * which runs in the item form context and writes via `ctx.setFieldValue(...)`.
+ *
+ * @param record - CMA record to read source values from.
+ * @param fromLocale - Source locale key.
+ * @param toLocale - Target locale key.
+ * @param fieldTypeDictionary - Map of field API keys to editor type/IDs/localized flags.
+ * @param openai - OpenAI client.
+ * @param pluginParams - Plugin configuration parameters.
+ * @param accessToken - Current user API token for DatoCMS.
+ * @param environment - Dato environment slug.
+ * @param opts - Optional AbortSignal and cancellation function.
+ * @returns Partial payload for client.items.update.
  */
-export async function translateRecordFields(
+export async function buildTranslatedUpdatePayload(
   record: DatoCMSRecordFromAPI,
   fromLocale: string,
   toLocale: string,
-  fieldTypeDictionary: Record<string, { editor: string; id: string; isLocalized: boolean }>,
+  fieldTypeDictionary: FieldTypeDictionary,
   openai: OpenAI,
   pluginParams: ctxParamsType,
   accessToken: string,
-  environment: string
+  environment: string,
+  opts: { abortSignal?: AbortSignal; checkCancelled?: () => boolean } = {}
 ): Promise<Record<string, unknown>> {
   const updatePayload: Record<string, Record<string, unknown>> = {};
 
@@ -247,9 +327,7 @@ export async function translateRecordFields(
     // updatePayload[field] already contains other locales from the initialization loop or record.
 
     // Handle hyphenated locales by finding the exact field key that matches the fromLocale
-    const fieldData = record[field] as Record<string, unknown>;
-    const fromLocaleKey = findExactLocaleKey(fieldData, fromLocale);
-    const sourceValue = fromLocaleKey ? fieldData[fromLocaleKey] : undefined;
+    const sourceValue = getExactSourceValue(record[field] as Record<string, unknown>, fromLocale);
 
     const fieldType = fieldTypeDictionary[field].editor;
     const fieldTypePrompt = prepareFieldTypePrompt(fieldType);
@@ -269,7 +347,7 @@ export async function translateRecordFields(
           accessToken,
           fieldTypeDictionary[field].id,
           environment,
-          undefined,
+          { abortSignal: opts.abortSignal, checkCancellation: opts.checkCancelled },
           generateRecordContext(record, fromLocale)
         );
         // Ensure we use the exact case-sensitive toLocale key as expected by DatoCMS
@@ -305,14 +383,20 @@ export async function translateRecordFields(
 }
 
 /**
- * Determines if a field should be translated
- * Properly handles hyphenated locales
+ * Determines if a field should be translated for a specific record,
+ * properly handling hyphenated locales.
+ *
+ * @param field - Field API key.
+ * @param record - CMA record object.
+ * @param fromLocale - Source locale key.
+ * @param fieldTypeDictionary - Field dictionary for the item type.
+ * @returns True when the field is localized and has a source value.
  */
 export function shouldTranslateField(
   field: string,
   record: DatoCMSRecordFromAPI,
   fromLocale: string,
-  fieldTypeDictionary: Record<string, { editor: string; id: string; isLocalized: boolean }>
+  fieldTypeDictionary: FieldTypeDictionary
 ): boolean {
   // Skip system fields that shouldn't be translated
   if (
@@ -324,11 +408,8 @@ export function shouldTranslateField(
   }
 
   // Check for the source locale in the field data with proper hyphenated locale support
-  const fieldData = record[field] as Record<string, unknown>;
-  const exactFromLocaleKey = findExactLocaleKey(fieldData, fromLocale);
-
-  // Only translate if the source locale exists and has a value
-  if (!exactFromLocaleKey || !fieldData[exactFromLocaleKey]) {
+  const sourceVal = getExactSourceValue(record[field] as Record<string, unknown>, fromLocale);
+  if (sourceVal === undefined || sourceVal === null || sourceVal === '') {
     return false;
   }
 
@@ -338,29 +419,23 @@ export function shouldTranslateField(
 /**
  * Prepares the field-specific prompt based on field type
  */
-export function prepareFieldTypePrompt(fieldType: string): string {
-  let fieldTypePrompt = 'Return the response in the format of ';
-  const baseFieldPrompts = fieldPrompt;
-  // Structured and rich text fields use specialized prompts defined elsewhere
-  if (fieldType !== 'structured_text' && fieldType !== 'rich_text') {
-    fieldTypePrompt +=
-      baseFieldPrompts[fieldType as keyof typeof baseFieldPrompts] || '';
-  }
-  
-  return fieldTypePrompt;
-}
+// prepareFieldTypePrompt now shared in SharedFieldUtils.ts
 
 // Using findExactLocaleKey imported from TranslateField.ts
 
 /**
- * Builds a dictionary of field types for an item type
+ * Builds a dictionary of field metadata for a given item type.
+ *
+ * @param client - CMA client.
+ * @param itemTypeId - Item type ID.
+ * @returns FieldTypeDictionary with editor, id and localized flags.
  */
 export async function buildFieldTypeDictionary(
   client: ReturnType<typeof buildClient>,
   itemTypeId: string
 ) {
   const fields = await client.fields.list(itemTypeId);
-  return fields.reduce((acc: Record<string, { editor: string; id: string; isLocalized: boolean }>, field: {
+  return fields.reduce((acc: FieldTypeDictionary, field: {
     api_key: string;
     appearance: { editor: string };
     id: string;

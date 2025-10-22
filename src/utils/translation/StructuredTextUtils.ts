@@ -16,8 +16,10 @@ export interface StructuredTextNode {
 }
 
 /**
- * Checks if a node is a text node.
- * Text nodes contain actual content to be translated.
+ * Checks if a node is a text node (contains translatable content).
+ *
+ * @param node - Structured text node.
+ * @returns True if the node is a text node.
  */
 export function isTextNode(node: StructuredTextNode): boolean {
   return node.type === 'span' && typeof node.value === 'string';
@@ -25,15 +27,19 @@ export function isTextNode(node: StructuredTextNode): boolean {
 
 /**
  * Checks if a node is a block node.
- * Block nodes are specialized nodes that require different handling.
+ *
+ * @param node - Structured text node.
+ * @returns True if the node is a block node.
  */
 export function isBlockNode(node: StructuredTextNode): boolean {
   return node.type === 'block';
 }
 
 /**
- * Checks if a node is an inline item node.
- * Inline items are references to other content that should be preserved.
+ * Checks if a node is an inline item node (reference to another item).
+ *
+ * @param node - Structured text node.
+ * @returns True if the node is an inline item.
  */
 export function isInlineItem(node: StructuredTextNode): boolean {
   return node.type === 'inlineItem';
@@ -41,7 +47,9 @@ export function isInlineItem(node: StructuredTextNode): boolean {
 
 /**
  * Checks if a node is an item link node.
- * Item links are references to other content that should be preserved.
+ *
+ * @param node - Structured text node.
+ * @returns True if the node is an item link.
  */
 export function isItemLink(node: StructuredTextNode): boolean {
   return node.type === 'itemLink';

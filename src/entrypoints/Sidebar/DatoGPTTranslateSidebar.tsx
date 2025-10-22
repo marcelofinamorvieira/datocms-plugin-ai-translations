@@ -69,6 +69,7 @@ export default function DatoGPTTranslateSidebar({ ctx }: PropTypes) {
   // Each bubble: { fieldLabel: string, locale: string, status: 'pending'|'done' }
   const [translationBubbles, setTranslationBubbles] = useState<
     {
+      id: string;
       fieldLabel: string;
       locale: string;
       status: 'pending' | 'done';
@@ -87,7 +88,7 @@ export default function DatoGPTTranslateSidebar({ ctx }: PropTypes) {
 
   // Timer effect
   useEffect(() => {
-    let timer: NodeJS.Timeout;
+    let timer: ReturnType<typeof setTimeout> | undefined;
     if (showTimer) {
       const startTime = Date.now();
       const updateProgress = () => {
@@ -109,6 +110,23 @@ export default function DatoGPTTranslateSidebar({ ctx }: PropTypes) {
       if (timer) clearTimeout(timer);
     };
   }, [showTimer]);
+
+  // Show success as soon as all bubbles report done, without waiting for the worker to settle
+  useEffect(() => {
+    if (!isLoading || isCancelling || showTimer) return;
+    if (translationBubbles.length === 0) return;
+    const allDone = translationBubbles.every((b) => b.status === 'done');
+    if (allDone) {
+      const t = setTimeout(() => {
+        if (!showTimer) {
+          ctx.notice('All fields translated successfully');
+          setShowTimer(true);
+          setProgress(100);
+        }
+      }, 100); // allow final bubble animation to commit
+      return () => clearTimeout(t);
+    }
+  }, [translationBubbles, isLoading, isCancelling, showTimer, ctx]);
 
   // If no valid API key or model is configured, prompt user to fix configuration
   if (!pluginParams.apiKey || !pluginParams.gptModel) {
@@ -161,24 +179,27 @@ export default function DatoGPTTranslateSidebar({ ctx }: PropTypes) {
         selectedLocale,
         {
           onStart: (fieldLabel, locale, fieldPath) => {
-            setTranslationBubbles((prev) => [
-              ...prev,
-              { fieldLabel, locale, status: 'pending', fieldPath },
-            ]);
+            setTranslationBubbles((prev) => {
+              if (prev.some((b) => b.id === fieldPath)) return prev;
+              return [
+                ...prev,
+                { id: fieldPath, fieldLabel, locale, status: 'pending', fieldPath },
+              ];
+            });
           },
-          onStream: (fieldLabel, locale, content) => {
+          onStream: (_fieldLabel, _locale, fieldPath, content) => {
             setTranslationBubbles((prev) =>
               prev.map((bubble) =>
-                bubble.fieldLabel === fieldLabel && bubble.locale === locale
+                bubble.id === fieldPath
                   ? { ...bubble, streamingContent: content }
                   : bubble
               )
             );
           },
-          onComplete: (fieldLabel, locale) => {
+          onComplete: (_fieldLabel, _locale, fieldPath) => {
             setTranslationBubbles((prev) =>
               prev.map((bubble) =>
-                bubble.fieldLabel === fieldLabel && bubble.locale === locale
+                bubble.id === fieldPath
                   ? { ...bubble, status: 'done', streamingContent: undefined }
                   : bubble
               )
@@ -190,9 +211,12 @@ export default function DatoGPTTranslateSidebar({ ctx }: PropTypes) {
       );
 
       if (!isCancelling) {
-        ctx.notice('All fields translated successfully');
-        setShowTimer(true);
-        setProgress(100);
+        // If effect already showed success, don't duplicate
+        if (!showTimer) {
+          ctx.notice('All fields translated successfully');
+          setShowTimer(true);
+          setProgress(100);
+        }
       } else {
         ctx.notice('Translation cancelled');
         setIsCancelling(false);
@@ -344,7 +368,7 @@ export default function DatoGPTTranslateSidebar({ ctx }: PropTypes) {
             >
               {translationBubbles.map((bubble, index) => (
                 <button
-                  key={`${bubble.fieldPath}-${bubble.locale}`}
+                  key={bubble.id}
                   onClick={() => {
                     ctx.scrollToField(bubble.fieldPath, bubble.locale);
                   }}
@@ -359,7 +383,7 @@ export default function DatoGPTTranslateSidebar({ ctx }: PropTypes) {
                   type="button"
                 >
                   <ChatBubble
-                    key={`chat-${bubble.fieldPath}-${bubble.locale}`}
+                    key={`chat-${bubble.id}`}
                     index={index}
                     bubble={bubble}
                     theme={ctx.theme}

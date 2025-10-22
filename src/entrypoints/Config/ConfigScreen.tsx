@@ -20,10 +20,10 @@ import {
 } from 'datocms-react-ui';
 import s from '../styles.module.css';
 import { useEffect, useState, useMemo } from 'react';
-import OpenAI from 'openai';
 import ReactTextareaAutosize from 'react-textarea-autosize';
 import { defaultPrompt } from '../../prompts/DefaultPrompt';
 import { buildClient } from '@datocms/cma-client-browser';
+import { listRelevantOpenAIModels } from '../../utils/translation/OpenAIModels';
 
 /**
  * The shape of the plugin parameters we store in DatoCMS.
@@ -72,31 +72,23 @@ export const modularContentVariations = ['framed_single_block'];
 async function fetchAvailableModels(
   apiKey: string,
   setOptions: React.Dispatch<React.SetStateAction<string[]>>,
-  setGptModel: React.Dispatch<React.SetStateAction<string>>
+  setGptModel: React.Dispatch<React.SetStateAction<string>>,
+  setRecommended: React.Dispatch<React.SetStateAction<string | null>>
 ) {
   try {
-    // Create an instance of the OpenAI API client
-    const openai = new OpenAI({ apiKey, dangerouslyAllowBrowser: true });
+    const models = await listRelevantOpenAIModels(apiKey);
+    setOptions(models.length > 0 ? models : ['No compatible models found']);
 
-    // Fetch the list of all available models
-    const list = await openai.models.list();
-
-    // Sort in quality/price order: normal, mini, nano (4.1 first, then 4o)
-    const order = [
-      'gpt-4.1',
-      'gpt-4.1-mini',
-      'gpt-4.1-nano',
-      'gpt-4o',
-      'gpt-4o-mini',
-    ];
-    setOptions(
-      order.filter((id) => list.data.map((option) => option.id).includes(id))
-    );
+    // Prefer gpt‑5‑mini when available; else gpt‑5; else first item.
+    const preferMini = models.find((m) => /^(gpt-5([.-]|$).*)?mini\b/.test(m) || /^(gpt-5([.-]|$)).*\bmini\b/.test(m));
+    const preferGpt5 = models.find((m) => /^gpt-5(\b|[.-])/.test(m));
+    const recommended = preferMini || preferGpt5 || models[0] || null;
+    setRecommended(recommended);
   } catch (error) {
     console.error('Error fetching OpenAI models:', error);
-    // If an error occurs, notify the user that we failed to fetch model list
     setOptions(['Invalid API Key']);
     setGptModel('None');
+    setRecommended(null);
   }
 }
 
@@ -168,7 +160,7 @@ export default function ConfigScreen({ ctx }: { ctx: RenderConfigScreenCtx }) {
 
   // Local state for the selected GPT model
   const [gptModel, setGptModel] = useState(
-    pluginParams.gptModel ?? 'gpt-4.1-mini'
+    pluginParams.gptModel ?? 'None'
   );
 
   // Local state for which field types can be translated
@@ -217,6 +209,8 @@ export default function ConfigScreen({ ctx }: { ctx: RenderConfigScreenCtx }) {
       : false
   );
 
+  // Performance concurrency is now fully automatic; no user setting.
+
   // A loading state to indicate asynchronous operations (like saving or model fetching)
   const [isLoading, setIsLoading] = useState(false);
 
@@ -224,6 +218,9 @@ export default function ConfigScreen({ ctx }: { ctx: RenderConfigScreenCtx }) {
   const [listOfModels, setListOfModels] = useState<string[]>([
     'Insert a valid OpenAI API Key',
   ]);
+
+  // Top recommended model (first in the filtered/sorted list)
+  const [recommendedModel, setRecommendedModel] = useState<string | null>(null);
 
   const [listOfFields, setListOfFields] = useState<
     {
@@ -290,14 +287,27 @@ export default function ConfigScreen({ ctx }: { ctx: RenderConfigScreenCtx }) {
 
   useEffect(() => {
     if (apiKey) {
-      fetchAvailableModels(apiKey, setListOfModels, setGptModel).catch(
-        console.error
-      );
+      fetchAvailableModels(
+        apiKey,
+        setListOfModels,
+        setGptModel,
+        setRecommendedModel
+      ).catch(console.error);
     } else {
       setListOfModels(['Insert a valid OpenAI API Key']);
       setGptModel('None');
+      setRecommendedModel(null);
     }
   }, [apiKey]);
+
+  // If we detect a recommended model and the current selection is unset or None,
+  // adopt the recommendation automatically.
+  useEffect(() => {
+    if (recommendedModel && (gptModel === 'None' || !pluginParams.gptModel)) {
+      setGptModel(recommendedModel);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [recommendedModel]);
 
   /**
    * Checks if the user has changed any of the config fields,
@@ -387,11 +397,12 @@ export default function ConfigScreen({ ctx }: { ctx: RenderConfigScreenCtx }) {
           <span className={s.label}>GPT Model*</span>
           <span className={s.tooltipContainer}>
             ⓘ
-            <span className={s.tooltipText}>
-              <b>Allowed:</b> GPT-4.1 & GPT-4o<br/>
-              <b>normal</b>: highest quality<br/>
-              <b>mini</b>: best balance<br/>
-              <b>nano</b>: fastest, cheapest
+            <span className={`${s.tooltipText} ${s.leftAnchorTooltip}`}>
+              <div style={{ textAlign: 'left' }}>
+                <div><b>Default:</b> gpt-5-mini — best quality/cost/latency balance.</div>
+                <div><b>High-stakes short copy:</b> gpt-5</div>
+                <div><b>Large or budget batches:</b> gpt-5-nano</div>
+              </div>
             </span>
           </span>
           <div className={s.modelSelect}>
@@ -406,49 +417,32 @@ export default function ConfigScreen({ ctx }: { ctx: RenderConfigScreenCtx }) {
               )}
             >
               <DropdownMenu>
-                {listOfModels.length === 1 && (
-                  <DropdownOption>{listOfModels[0]}</DropdownOption>
-                )}
-                {listOfModels
-                  .filter((model) => [
-                    'gpt-4.1',
-                    'gpt-4.1-mini',
-                    'gpt-4.1-nano',
-                    'gpt-4o',
-                    'gpt-4o-mini',
-                  ].includes(model))
-                  .sort((a, b) => {
-                    const order = [
-                      'gpt-4.1',
-                      'gpt-4.1-mini',
-                      'gpt-4.1-nano',
-                      'gpt-4o',
-                      'gpt-4o-mini',
-                    ];
-                    return order.indexOf(a) - order.indexOf(b);
-                  })
-                  .map((model) => (
-                    <DropdownOption
-                      key={model}
-                      onClick={() => setGptModel(model)}
-                    >
-                      {model}
-                    </DropdownOption>
-                  ))}
+                {listOfModels.map((model) => (
+                  <DropdownOption key={model} onClick={() => setGptModel(model)}>
+                    {model}
+                  </DropdownOption>
+                ))}
               </DropdownMenu>
             </Dropdown>
             <button
               onClick={() => {
-                setGptModel('gpt-4.1-mini');
-                ctx.notice('Selected gpt-4.1-mini');
+                if (recommendedModel) {
+                  setGptModel(recommendedModel);
+                  ctx.notice(`Selected ${recommendedModel}`);
+                }
               }}
               className={s.tooltipConfig}
               type="button"
+              disabled={!recommendedModel}
             >
-              Using gpt-4.1-mini is recommended
+              {recommendedModel
+                ? `Recommended: ${recommendedModel}`
+                : 'No compatible models detected'}
             </button>
           </div>
         </div>
+
+        {/* Performance: concurrency is automatic with adaptive backoff */}
 
         {/* A multi-select component that lets users choose which field types can be translated */}
         <SelectField
@@ -704,7 +698,7 @@ export default function ConfigScreen({ ctx }: { ctx: RenderConfigScreenCtx }) {
             }
             buttonType="muted"
             onClick={() => {
-              setGptModel('gpt-4.1-mini');
+              setGptModel(recommendedModel ?? 'gpt-5-mini');
               setTranslationFields(Object.keys(translateFieldTypes));
               setTranslateWholeRecord(true);
               setTranslateBulkRecords(true);

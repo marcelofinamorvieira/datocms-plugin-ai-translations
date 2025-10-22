@@ -24,12 +24,7 @@ import {
 } from './utils';
 
 /**
- * Callback interfaces for handling streaming responses
- * @interface StreamCallbacks
- * @property {Function} onStream - Callback function for handling each stream chunk
- * @property {Function} onComplete - Callback function triggered when streaming completes
- * @property {Function} checkCancellation - Function to check if translation should be cancelled
- * @property {AbortSignal} abortSignal - Signal to abort the translation process
+ * Callback interfaces for handling streaming responses.
  */
 type StreamCallbacks = {
   onStream?: (chunk: string) => void;
@@ -39,14 +34,8 @@ type StreamCallbacks = {
 };
 
 /**
- * Interface representing a structured text node from DatoCMS
- * Includes standard properties and allows for additional dynamic properties
- * 
- * @interface StructuredTextNode
- * @property {string} type - Node type (e.g., 'paragraph', 'heading', 'block')
- * @property {string} value - Text content of the node
- * @property {string} item - Reference to a linked item
- * @property {number} originalIndex - Original position in the document (for tracking)
+ * Interface representing a structured text node from DatoCMS.
+ * Includes standard properties and allows for additional dynamic properties.
  */
 interface StructuredTextNode {
   type?: string;
@@ -59,9 +48,9 @@ interface StructuredTextNode {
 /**
  * Ensures the array lengths match, with fallback strategies if they don't
  * 
- * @param {string[]} originalValues - Original array of text values 
- * @param {string[]} translatedValues - Translated array that might need adjustment
- * @returns {string[]} - Adjusted translated values array matching original length
+ * @param originalValues - Original array of text values.
+ * @param translatedValues - Translated array that might need adjustment.
+ * @returns Adjusted translated values array matching original length.
  */
 function ensureArrayLengthsMatch(originalValues: string[], translatedValues: string[]): string[] {
   if (originalValues.length === translatedValues.length) {
@@ -87,15 +76,16 @@ function ensureArrayLengthsMatch(originalValues: string[], translatedValues: str
 /**
  * Translates a structured text field value while preserving its structure
  * 
- * @param {unknown} fieldValue - The structured text field value to translate
- * @param {ctxParamsType} pluginParams - Plugin configuration parameters
- * @param {string} toLocale - Target locale code
- * @param {string} fromLocale - Source locale code
- * @param {OpenAI} openai - OpenAI client instance
- * @param {string} apiToken - DatoCMS API token
- * @param {StreamCallbacks} streamCallbacks - Optional callbacks for streaming responses
- * @param {string} recordContext - Optional context about the record being translated
- * @returns {Promise<unknown>} - The translated structured text value
+ * @param initialValue - The structured text field value to translate
+ * @param pluginParams - Plugin configuration parameters
+ * @param toLocale - Target locale code
+ * @param fromLocale - Source locale code
+ * @param openai - OpenAI client instance
+ * @param apiToken - DatoCMS API token
+ * @param environment - Dato environment
+ * @param streamCallbacks - Optional callbacks for streaming responses
+ * @param recordContext - Optional context about the record being translated
+ * @returns The translated structured text value
  */
 export async function translateStructuredTextValue(
   initialValue: unknown,
@@ -193,9 +183,20 @@ IMPORTANT: Your response must be a valid JSON array of strings with EXACTLY ${te
       messages: [{ role: 'user', content: prompt }],
       model: pluginParams.gptModel,
       stream: true,
+    }, {
+      // Enable aborting the streaming request
+      signal: streamCallbacks?.abortSignal,
     });
 
     for await (const chunk of stream) {
+      // Cooperative cancellation
+      if (streamCallbacks?.checkCancellation?.()) {
+        logger.info('Structured text translation cancelled by user');
+        if (streamCallbacks?.onComplete) {
+          streamCallbacks.onComplete();
+        }
+        return fieldValue; // return original content
+      }
       const content = chunk.choices[0]?.delta?.content || '';
       translatedText += content;
 

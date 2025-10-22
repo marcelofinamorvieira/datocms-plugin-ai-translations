@@ -148,3 +148,8 @@
   width: 100%;
   gap: 16px;
 }
+/*
+ * TranslationProgressModal.css
+ * Styles for the bulk translation progress modal UI.
+ * Keep selectors scoped to .TranslationProgressModal to avoid leaking styles.
+ */

@@ -17,15 +17,13 @@ import type { ctxParamsType } from '../../entrypoints/Config/ConfigScreen';
 import { createLogger } from '../logging/Logger';
 
 /**
- * Interface for streaming translation updates to the UI
- * 
- * @interface StreamCallbacks
- * @property {Function} onStream - Callback for incremental translation updates
- * @property {Function} onComplete - Callback when translation is complete
+ * Interface for streaming translation updates to the UI.
  */
 type StreamCallbacks = {
   onStream?: (chunk: string) => void;
   onComplete?: () => void;
+  checkCancellation?: () => boolean;
+  abortSignal?: AbortSignal;
 };
 
 /**
@@ -36,14 +34,14 @@ type StreamCallbacks = {
  * and reconstructs the file objects with the translated metadata while preserving
  * other properties like URLs, dimensions, etc.
  * 
- * @param {unknown} fieldValue - The file or gallery field data to translate
- * @param {ctxParamsType} pluginParams - Plugin configuration parameters
- * @param {string} toLocale - Target locale code for translation
- * @param {string} fromLocale - Source locale code for translation
- * @param {OpenAI} openai - Instance of OpenAI client for translation
- * @param {StreamCallbacks} streamCallbacks - Optional callbacks for streaming progress updates
- * @param {string} recordContext - Optional context about the record to improve translation quality
- * @returns {Promise<unknown>} - Updated file field data with translated metadata
+ * @param fieldValue - The file or gallery field data to translate
+ * @param pluginParams - Plugin configuration parameters
+ * @param toLocale - Target locale code for translation
+ * @param fromLocale - Source locale code for translation
+ * @param openai - Instance of OpenAI client for translation
+ * @param streamCallbacks - Optional callbacks for streaming progress updates
+ * @param recordContext - Optional context about the record to improve translation quality
+ * @returns Updated file field data with translated metadata
  */
 export async function translateFileFieldValue(
   fieldValue: unknown,
@@ -111,14 +109,14 @@ export async function translateFileFieldValue(
  * back into the original file object, preserving all non-metadata properties.
  * It only translates string-type metadata values, leaving other types untouched.
  * 
- * @param {unknown} fileValue - The file object containing metadata to translate
- * @param {ctxParamsType} pluginParams - Plugin configuration parameters
- * @param {string} toLocale - Target locale code for translation
- * @param {string} fromLocale - Source locale code for translation
- * @param {OpenAI} openai - Instance of OpenAI client for translation
- * @param {StreamCallbacks} streamCallbacks - Optional callbacks for streaming progress updates
- * @param {string} recordContext - Optional context about the record to improve translation quality
- * @returns {Promise<unknown>} - Updated file object with translated metadata
+ * @param fileValue - The file object containing metadata to translate
+ * @param pluginParams - Plugin configuration parameters
+ * @param toLocale - Target locale code for translation
+ * @param fromLocale - Source locale code for translation
+ * @param openai - Instance of OpenAI client for translation
+ * @param streamCallbacks - Optional callbacks for streaming progress updates
+ * @param recordContext - Optional context about the record to improve translation quality
+ * @returns Updated file object with translated metadata
  */
 async function translateSingleFileMetadata(
   fileValue: unknown,
@@ -184,9 +182,19 @@ async function translateSingleFileMetadata(
       messages: [{ role: 'user', content: prompt }],
       model: pluginParams.gptModel,
       stream: true,
+    }, {
+      signal: streamCallbacks?.abortSignal as AbortSignal | undefined,
     });
 
     for await (const chunk of stream) {
+      // Cooperative cancellation
+      if ((streamCallbacks as { checkCancellation?: () => boolean } | undefined)?.checkCancellation?.()) {
+        logger.info('File metadata translation cancelled by user');
+        if (streamCallbacks?.onComplete) {
+          streamCallbacks.onComplete();
+        }
+        return fileValue;
+      }
       const content = chunk.choices[0]?.delta?.content || '';
       translatedText += content;
       if (streamCallbacks?.onStream) {

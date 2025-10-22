@@ -17,13 +17,7 @@ import type { ctxParamsType } from '../../entrypoints/Config/ConfigScreen';
 import { createLogger } from '../logging/Logger';
 
 /**
- * Interface for handling streaming responses during translation
- * 
- * @interface StreamCallbacks
- * @property {Function} onStream - Handler for incremental translation results
- * @property {Function} onComplete - Handler called when translation completes
- * @property {Function} checkCancellation - Function to check if translation should be cancelled
- * @property {AbortSignal} abortSignal - Signal for aborting the API request
+ * Interface for handling streaming responses during translation.
  */
 type StreamCallbacks = {
   onStream?: (chunk: string) => void;
@@ -40,14 +34,14 @@ type StreamCallbacks = {
  * streamed response. It supports providing record context for improved translation
  * accuracy and offers streaming callbacks for UI updates.
  * 
- * @param {unknown} fieldValue - The value to translate (typically a string)
- * @param {ctxParamsType} pluginParams - Configuration parameters for the plugin
- * @param {string} toLocale - Target locale code
- * @param {string} fromLocale - Source locale code
- * @param {OpenAI} openai - OpenAI client instance
- * @param {StreamCallbacks} streamCallbacks - Optional callbacks for streaming translation updates
- * @param {string} recordContext - Additional context about the record being translated
- * @returns {Promise<unknown>} - The translated text
+ * @param fieldValue - The value to translate (typically a string)
+ * @param pluginParams - Configuration parameters for the plugin
+ * @param toLocale - Target locale code
+ * @param fromLocale - Source locale code
+ * @param openai - OpenAI client instance
+ * @param streamCallbacks - Optional callbacks for streaming translation updates
+ * @param recordContext - Additional context about the record being translated
+ * @returns The translated text
  */
 export async function translateDefaultFieldValue(
   fieldValue: unknown,
@@ -159,8 +153,8 @@ export async function translateDefaultFieldValue(
  * runtime type checking to ensure the callback functions exist and are of the
  * correct type.
  * 
- * @param {unknown} callbacks - The object to check
- * @returns {boolean} - True if the object is a valid StreamCallbacks instance
+ * @param callbacks - The object to check
+ * @returns True if the object is a valid StreamCallbacks instance
  */
 export function isValidStreamCallbacks(callbacks: unknown): callbacks is { onStream?: (chunk: string) => void; onComplete?: () => void; checkCancellation?: () => boolean; abortSignal?: AbortSignal } {
   if (!callbacks) return false;

@@ -27,11 +27,7 @@ export interface SeoObject {
 }
 
 /**
- * Interface for handling streaming translation updates
- * 
- * @interface StreamCallbacks
- * @property {Function} onStream - Callback for incremental translation updates
- * @property {Function} onComplete - Callback for when translation is complete
+ * Interface for handling streaming translation updates.
  */
 type StreamCallbacks = {
   onStream?: (chunk: string) => void;
@@ -48,15 +44,15 @@ type StreamCallbacks = {
  * translated values. It handles streaming updates for UI feedback and
  * uses record context to improve translation quality when available.
  *
- * @param {SeoObject} fieldValue - The SEO field object to translate
- * @param {ctxParamsType} pluginParams - Plugin configuration parameters
- * @param {string} toLocale - Target locale code for translation
- * @param {string} fromLocale - Source locale code for translation
- * @param {OpenAI} openai - OpenAI client instance
- * @param {string} fieldTypePrompt - Additional prompt for SEO format instructions
- * @param {StreamCallbacks} streamCallbacks - Optional callbacks for streaming updates
- * @param {string} recordContext - Optional context about the record being translated
- * @returns {Promise<SeoObject>} - The translated SEO object
+ * @param fieldValue - The SEO field object to translate
+ * @param pluginParams - Plugin configuration parameters
+ * @param toLocale - Target locale code for translation
+ * @param fromLocale - Source locale code for translation
+ * @param openai - OpenAI client instance
+ * @param fieldTypePrompt - Additional prompt for SEO format instructions
+ * @param streamCallbacks - Optional callbacks for streaming updates
+ * @param recordContext - Optional context about the record being translated
+ * @returns The translated SEO object
  */
 export async function translateSeoFieldValue(
   fieldValue: SeoObject | undefined | null,
@@ -100,8 +96,8 @@ export async function translateSeoFieldValue(
     // Using template literal as per linting rules
     const formattedPrompt = `${prompt}\n${fieldTypePrompt}`;
     logger.info('Formatted prompt prepared for translation');
-
-    console.log(formattedPrompt)
+    // Log prompt only when debugging is enabled
+    logger.logPrompt('SEO translation prompt', formattedPrompt);
 
     let translatedText = '';
     logger.info('Initiating OpenAI stream for translation');
@@ -109,9 +105,20 @@ export async function translateSeoFieldValue(
       messages: [{ role: 'user', content: formattedPrompt }],
       model: pluginParams.gptModel,
       stream: true,
+    }, {
+      // Allow cancellation of in-flight requests from UI
+      signal: streamCallbacks?.abortSignal,
     });
 
     for await (const chunk of stream) {
+      // Support cooperative cancellation during streaming
+      if (streamCallbacks?.checkCancellation?.()) {
+        logger.info('SEO translation cancelled by user');
+        if (streamCallbacks?.onComplete) {
+          streamCallbacks.onComplete();
+        }
+        return seoObjectToTranslate; // Return original values if cancelled
+      }
       const content = chunk.choices[0]?.delta?.content || '';
       translatedText += content;
       if (streamCallbacks?.onStream) {

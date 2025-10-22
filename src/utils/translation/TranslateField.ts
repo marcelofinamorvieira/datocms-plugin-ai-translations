@@ -26,13 +26,7 @@ import { deleteItemIdKeys } from './utils';
 import { createLogger } from '../logging/Logger';
 
 /**
- * Defines the callback interface for streaming translation results
- * 
- * @interface StreamCallbacks
- * @property {Function} onStream - Callback triggered for each chunk of translated content
- * @property {Function} onComplete - Callback triggered when translation is complete
- * @property {Function} checkCancellation - Function to check if translation should be cancelled
- * @property {AbortSignal} abortSignal - Signal for aborting translation operation
+ * Defines the callback interface for streaming translation results.
  */
 export type StreamCallbacks = {
   onStream?: (chunk: string) => void;
@@ -49,18 +43,19 @@ export type StreamCallbacks = {
  * translators for complex fields (SEO, structured text, etc.) or falls back to the
  * default translator for simple field types.
  * 
- * @param {unknown} fieldValue - The value of the field to translate
- * @param {ctxParamsType} pluginParams - Plugin configuration parameters
- * @param {string} toLocale - Target locale code
- * @param {string} fromLocale - Source locale code
- * @param {string} fieldType - The DatoCMS field type
- * @param {OpenAI} openai - OpenAI client instance
- * @param {string} fieldTypePrompt - Additional prompt for special field types
- * @param {string} apiToken - DatoCMS API token
- * @param {string | undefined} fieldId - ID of the field being translated
- * @param {StreamCallbacks} streamCallbacks - Optional callbacks for streaming translations
- * @param {string} recordContext - Additional context about the record being translated
- * @returns {Promise<unknown>} - The translated field value
+ * @param fieldValue - The value of the field to translate
+ * @param pluginParams - Plugin configuration parameters
+ * @param toLocale - Target locale code
+ * @param fromLocale - Source locale code
+ * @param fieldType - The DatoCMS field type
+ * @param openai - OpenAI client instance
+ * @param fieldTypePrompt - Additional prompt for special field types
+ * @param apiToken - DatoCMS API token
+ * @param fieldId - ID of the field being translated
+ * @param environment - Dato environment for any API lookups
+ * @param streamCallbacks - Optional callbacks for streaming translations
+ * @param recordContext - Additional context about the record being translated
+ * @returns The translated field value
  */
 export async function translateFieldValue(
   fieldValue: unknown,
@@ -171,16 +166,17 @@ export async function translateFieldValue(
  * including nested fields within blocks. It dynamically fetches field metadata
  * for each block and processes each field according to its type.
  * 
- * @param {unknown} fieldValue - The block value to translate
- * @param {ctxParamsType} pluginParams - Plugin configuration parameters
- * @param {string} toLocale - Target locale code
- * @param {string} fromLocale - Source locale code 
- * @param {OpenAI} openai - OpenAI client instance
- * @param {string} apiToken - DatoCMS API token
- * @param {string} fieldType - The specific block field type
- * @param {StreamCallbacks} streamCallbacks - Optional callbacks for streaming translations
- * @param {string} recordContext - Additional context about the record being translated
- * @returns {Promise<unknown>} - The translated block value
+ * @param fieldValue - The block value to translate
+ * @param pluginParams - Plugin configuration parameters
+ * @param toLocale - Target locale code
+ * @param fromLocale - Source locale code
+ * @param openai - OpenAI client instance
+ * @param apiToken - DatoCMS API token
+ * @param fieldType - The specific block field type
+ * @param environment - Dato environment
+ * @param streamCallbacks - Optional callbacks for streaming translations
+ * @param recordContext - Additional context about the record being translated
+ * @returns The translated block value
  */
 async function translateBlockValue(
   fieldValue: unknown,
@@ -205,6 +201,12 @@ async function translateBlockValue(
 
   const client = buildClient({ apiToken, environment });
 
+  // Cache field metadata per block model to avoid repeated CMA calls
+  const fieldsCache: Map<string, Record<string, { editor: string; id: string }>> =
+    (translateBlockValue as unknown as { __fieldsCache?: Map<string, Record<string, { editor: string; id: string }>> }).__fieldsCache ??
+    new Map();
+  (translateBlockValue as unknown as { __fieldsCache?: Map<string, Record<string, { editor: string; id: string }>> }).__fieldsCache = fieldsCache;
+
   for (const block of cleanedFieldValue) {
     // Determine the block model ID
     // biome-ignore lint/suspicious/noExplicitAny: <i need to type blocks here>
@@ -214,15 +216,19 @@ async function translateBlockValue(
       continue;
     }
 
-    // Fetch fields for this specific block
-    const fields = await client.fields.list(blockModelId as string);
-    const fieldTypeDictionary = fields.reduce((acc, field) => {
-      acc[field.api_key] = {
-        editor: field.appearance.editor,
-        id: field.id,
-      };
-      return acc;
-    }, {} as Record<string, { editor: string; id: string }>);
+    // Fetch fields for this specific block (with memoization)
+    let fieldTypeDictionary = fieldsCache.get(String(blockModelId));
+    if (!fieldTypeDictionary) {
+      const fields = await client.fields.list(blockModelId as string);
+      fieldTypeDictionary = fields.reduce((acc, field) => {
+        acc[field.api_key] = {
+          editor: field.appearance.editor,
+          id: field.id,
+        };
+        return acc;
+      }, {} as Record<string, { editor: string; id: string }>);
+      fieldsCache.set(String(blockModelId), fieldTypeDictionary);
+    }
 
     // Translate each field within the block
     if (block.attributes) {
@@ -299,15 +305,16 @@ async function translateBlockValue(
  * It handles all the setup, including creating an OpenAI client, generating
  * record context, and managing streaming responses back to the UI.
  * 
- * @param {unknown} fieldValue - The field value to translate
- * @param {ExecuteFieldDropdownActionCtx} ctx - DatoCMS plugin context
- * @param {ctxParamsType} pluginParams - Plugin configuration parameters
- * @param {string} toLocale - Target locale code
- * @param {string} fromLocale - Source locale code
- * @param {string} fieldType - The DatoCMS field type
- * @param {StreamCallbacks} streamCallbacks - Optional callbacks for streaming translations
- * @param {string} recordContext - Additional context about the record being translated
- * @returns {Promise<unknown>} - The translated field value
+ * @param fieldValue - The field value to translate
+ * @param ctx - DatoCMS plugin context
+ * @param pluginParams - Plugin configuration parameters
+ * @param toLocale - Target locale code
+ * @param fromLocale - Source locale code
+ * @param fieldType - The DatoCMS field type
+ * @param environment - Dato environment
+ * @param streamCallbacks - Optional callbacks for streaming translations
+ * @param recordContext - Additional context about the record being translated
+ * @returns The translated field value
  */
 async function TranslateField(
   fieldValue: unknown,
@@ -385,9 +392,9 @@ async function TranslateField(
  * to provide context for the AI model, helping it understand the content
  * it's translating. It focuses on title, name, and content fields.
  * 
- * @param {Record<string, unknown>} formValues - The current form values from DatoCMS
- * @param {string} sourceLocale - The source locale code
- * @returns {string} - Formatted context string for use in translation prompts
+ * @param formValues - The current form values from DatoCMS
+ * @param sourceLocale - The source locale code
+ * @returns Formatted context string for use in translation prompts
  */
 export function generateRecordContext(formValues: Record<string, unknown>, sourceLocale: string): string {
   if (!formValues) return '';
@@ -427,8 +434,8 @@ export function generateRecordContext(formValues: Record<string, unknown>, sourc
  * This is essential for properly handling hyphenated locales (e.g., "pt-BR", "pt-br")
  * as DatoCMS requires exact case matches for locale keys.
  *
- * @param obj The object containing locale keys
- * @param localeCode The locale code to search for (case-insensitive)
+ * @param obj - The object containing locale keys
+ * @param localeCode - The locale code to search for (case-insensitive)
  * @returns The exact locale key as it appears in the object, or undefined if not found
  */
 export function findExactLocaleKey(obj: Record<string, unknown>, localeCode: string): string | undefined {

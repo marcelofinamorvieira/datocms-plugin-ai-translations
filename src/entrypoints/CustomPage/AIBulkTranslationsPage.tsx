@@ -4,7 +4,9 @@ import { useEffect, useState } from 'react';
 import { buildDatoCMSClient } from '../../utils/clients';
 import type { ctxParamsType } from '../../entrypoints/Config/ConfigScreen';
 import '../styles.module.css';
-import type { SingleValue, MultiValue } from 'react-select';
+// Light local equivalents of react-select types to avoid adding the package
+type SingleValue<T> = T | null;
+type MultiValue<T> = readonly T[];
 
 type PropTypes = {
   ctx: RenderPageCtx;
@@ -315,3 +317,9 @@ export default function AIBulkTranslationsPage({ ctx }: PropTypes) {
     </Canvas>
   );
 }
+/**
+ * AIBulkTranslationsPage.tsx
+ * Custom settings page that lets admins run bulk translations across models.
+ * Uses the CMA client from the current user token and opens a modal to track progress.
+ * This page is only visible to users with schema permissions (see main.tsx settings menu).
+ */

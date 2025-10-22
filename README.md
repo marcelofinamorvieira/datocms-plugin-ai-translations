@@ -15,17 +15,22 @@ See the [CHANGELOG.md](./CHANGELOG.md) file for details about all the latest fea
 On the plugin's Settings screen:
 
 1. **OpenAI API Key**: Paste a valid OpenAI API key. The plugin uses this key for translation requests.
-2. **GPT Model**: Select one of the available GPT-based models. Only GPT-4.1 and GPT-4o variants are permitted.
-    - mini: Balanced cost (~$0.02/$0.04) & quality.
-    - nano: Fastest & cheapest (~$0.01/$0.02), lower nuance.
-    - normal: Highest fidelity (~$0.03/$0.06), higher latency & cost.
+2. **GPT Model**: After entering your API key, the plugin fetches your
+   account's available OpenAI models and shows the ones relevant for
+   text translation via Chat Completions. A recommended default is highlighted.
+   - Default: gpt‑5‑mini (best balance of quality/cost/latency)
+   - High‑stakes short copy: gpt‑5 (highest fidelity)
+   - Large or budget batches: gpt‑5‑nano (lowest cost/latency)
+   - If GPT‑5 family isn’t on your account, the UI recommends the best 4.x alternative (e.g., gpt‑4.1‑mini)
 3. **Translatable Field Types**: Pick which field editor types (single_line, markdown, structured_text, etc.) can be translated.
 4. **Translate Whole Record**: Decide if you want the sidebar feature that allows users to translate every localized field in the record at once.
 5. **Translate Bulk Records**: Decide if you want the bulk translation feature that allows users to translate multiple records at once on the table view.
 6. **AI Bulk Translations Page**: Translate whole models at once.
 7. **Prompt Template**: Customize how translations are requested. The plugin uses placeholders like `{fieldValue}`, `{fromLocale}`, `{toLocale}`, and `{recordContext}`.
 
-_**Models**_: To ensure optimal translation quality, latency, and cost predictability, only GPT-4.1 and GPT-4o families are supported. These models balance fidelity, speed, and price for translation workflows.
+_**Models**_: The list is dynamic and based on your OpenAI account. The plugin
+filters out embeddings, audio/whisper/tts, moderation, image, and realtime models
+and prioritizes general-purpose GPT chat models commonly used for translation.
 
 Save your changes. The plugin is now ready.
 

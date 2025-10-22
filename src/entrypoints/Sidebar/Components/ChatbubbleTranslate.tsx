@@ -29,6 +29,7 @@ const localeSelect = locale.getByTag;
  */
 
 type BubbleType = {
+  id: string; // stable unique id (e.g., api_key.locale)
   fieldLabel: string;
   locale: string;
   status: 'pending' | 'done';
@@ -157,7 +158,8 @@ export function ChatBubble({ bubble, theme }: Props) {
   return (
     <AnimatePresence>
       <motion.div
-        key={bubble.fieldLabel + bubble.locale}
+        key={bubble.id}
+        layout
         variants={bubbleVariants}
         initial="initial"
         animate="animate"
@@ -186,19 +188,11 @@ export function ChatBubble({ bubble, theme }: Props) {
 
           <div className={styles.bubbleContent}>
             <span className={styles.bubbleText}>
-              {bubble.status === 'pending' ? (
-                <>
-                  "<strong>{bubble.fieldLabel}</strong>" to{' '}
-                  <strong>{localeSelect(bubble.locale)?.name}</strong>{' '}
-                  [<code>{bubble.locale}</code>]
-                </>
-              ) : (
-                <>
-                  "<strong>{bubble.fieldLabel}</strong>" to{' '}
-                  <strong>{localeSelect(bubble.locale)?.name}</strong>{' '}
-                  [<code>{bubble.locale}</code>]
-                </>
-              )}
+              <>
+                “<strong>{bubble.fieldLabel}</strong>” to{' '}
+                <strong>{localeSelect(bubble.locale)?.name}</strong>{' '}
+                [<code>{bubble.locale}</code>]
+              </>
             </span>
           </div>
           {bubble.status === 'done' && (
