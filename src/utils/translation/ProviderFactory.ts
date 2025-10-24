@@ -8,6 +8,14 @@ import type { ctxParamsType } from '../../entrypoints/Config/ConfigScreen';
 // Simple memoization by key to avoid recreating clients excessively
 const cache = new Map<string, TranslationProvider>();
 
+/**
+ * Returns a memoized translation provider instance based on the plugin
+ * configuration. Supports OpenAI (default), Google/Gemini, Anthropic/Claude
+ * and DeepL (array translation) with light endpoint heuristics.
+ *
+ * @param pluginParams - Configuration captured from the settings screen.
+ * @returns A provider implementing the `TranslationProvider` interface.
+ */
 export function getProvider(pluginParams: ctxParamsType): TranslationProvider {
   const vendor = (pluginParams as any).vendor ?? 'openai';
 

@@ -78,6 +78,10 @@ function ensureArrayLengthsMatch(originalValues: string[], translatedValues: str
  * inline nodes (e.g., around bold/links), which causes words to concatenate
  * across boundaries. This re-applies the exact edge whitespace from the
  * original extracted nodes.
+ *
+ * @param originalValues - Original array of extracted strings (including pure whitespace nodes).
+ * @param translatedValues - Translated strings returned by the provider.
+ * @returns A new array with edge whitespace restored from the originals.
  */
 function preserveEdgeWhitespace(originalValues: string[], translatedValues: string[]): string[] {
   const out: string[] = new Array(translatedValues.length);
@@ -106,6 +110,10 @@ function preserveEdgeWhitespace(originalValues: string[], translatedValues: stri
  * preserving pure-whitespace segments exactly where they were. Many models
  * drop or merge whitespace-only nodes; this ensures spacing nodes remain in
  * their original slots so that formatting boundaries don't eat spaces.
+ *
+ * @param originalValues - Original extracted strings (some may be whitespace only).
+ * @param translatedValues - Translated strings that may have a different count.
+ * @returns A translated array aligned to the original positions.
  */
 function alignSegmentsPreservingWhitespace(originalValues: string[], translatedValues: string[]): string[] {
   const out: string[] = [];
@@ -128,6 +136,10 @@ function alignSegmentsPreservingWhitespace(originalValues: string[], translatedV
  * separating space when the original had one either at the end of the left
  * segment or at the start of the right segment. This guards against models
  * trimming edges and losing the space after inline marks (bold/links).
+ *
+ * @param originalValues - Original extracted strings.
+ * @param processed - Translated strings after initial normalization.
+ * @returns A defensively spaced translated array.
  */
 function enforceBoundarySpaces(originalValues: string[], processed: string[]): string[] {
   const isWsOnly = (s: string) => s === '' || /^[\s\u00A0]+$/.test(s);
@@ -158,6 +170,10 @@ function enforceBoundarySpaces(originalValues: string[], processed: string[]): s
  * boundary has no punctuation and no space, inject a single space. This
  * covers cases where translators drop the comma inside a bold span and the
  * following word becomes attached.
+ *
+ * @param originalValues - Original extracted strings.
+ * @param processed - Translated strings after boundary spacing.
+ * @returns A translated array with punctuation boundaries respected.
  */
 function enforcePunctuationBoundarySpaces(originalValues: string[], processed: string[]): string[] {
   const out = processed.slice();

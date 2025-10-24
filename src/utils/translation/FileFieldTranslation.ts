@@ -40,7 +40,7 @@ type StreamCallbacks = {
  * @param toLocale - Target locale code for translation
  * @param fromLocale - Source locale code for translation
  * @param provider - TranslationProvider instance used for translation
- * @param streamCallbacks - Optional callbacks for streaming progress updates
+ * @param _streamCallbacks - Optional callbacks for streaming progress updates
  * @param recordContext - Optional context about the record to improve translation quality
  * @returns Updated file field data with translated metadata
  */
@@ -115,7 +115,7 @@ export async function translateFileFieldValue(
  * @param toLocale - Target locale code for translation
  * @param fromLocale - Source locale code for translation
  * @param provider - TranslationProvider instance used for translation
- * @param streamCallbacks - Optional callbacks for streaming progress updates
+ * @param _streamCallbacks - Optional callbacks for streaming progress updates
  * @param recordContext - Optional context about the record to improve translation quality
  * @returns Updated file object with translated metadata
  */

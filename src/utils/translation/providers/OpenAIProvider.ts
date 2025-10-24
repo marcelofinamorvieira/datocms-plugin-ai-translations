@@ -8,12 +8,21 @@ type OpenAIProviderConfig = {
   organization?: string;
 };
 
+/**
+ * OpenAI Chat Completions provider implementing the TranslationProvider
+ * interface. Supports streaming and non-streaming text generation.
+ */
 export default class OpenAIProvider implements TranslationProvider {
   public readonly vendor: VendorId = 'openai';
   public readonly capabilities: ProviderCapabilities = { streaming: true };
   private readonly client: OpenAI;
   private readonly model: string;
 
+  /**
+   * Creates a provider bound to a model and API credentials.
+   *
+   * @param cfg - API key, model id and optional base URL/organization.
+   */
   constructor(cfg: OpenAIProviderConfig) {
     this.client = new OpenAI({
       apiKey: cfg.apiKey,
@@ -24,6 +33,13 @@ export default class OpenAIProvider implements TranslationProvider {
     this.model = cfg.model;
   }
 
+  /**
+   * Streams text deltas for a prompt using Chat Completions when supported.
+   *
+   * @param prompt - Prompt text to send to the model.
+   * @param options - Optional abort signal.
+   * @returns Async iterable of text deltas.
+   */
   async *streamText(prompt: string, options?: StreamOptions): AsyncIterable<string> {
     const stream = await this.client.chat.completions.create(
       {
@@ -42,6 +58,13 @@ export default class OpenAIProvider implements TranslationProvider {
     }
   }
 
+  /**
+   * Completes a prompt and returns the final message text.
+   *
+   * @param prompt - Prompt text to send to the model.
+   * @param options - Optional abort signal.
+   * @returns Final message content (or empty string).
+   */
   async completeText(prompt: string, options?: StreamOptions): Promise<string> {
     const resp = await this.client.chat.completions.create(
       {

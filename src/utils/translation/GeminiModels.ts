@@ -1,6 +1,9 @@
 // Fetch and filter relevant Gemini models for text generation
 // Docs: https://generativelanguage.googleapis.com
 
+/**
+ * Partial representation of a Gemini model entry from the API.
+ */
 export type GeminiModelInfo = {
   name: string; // e.g., "models/gemini-1.5-flash"
   displayName?: string;
@@ -35,6 +38,14 @@ function scoreGemini(id: string): number {
   return base;
 }
 
+/**
+ * Lists Gemini models that support text generation, excluding embeddings and
+ * utility models, and sorts them by rough capability/speed heuristics.
+ * Falls back to a minimal curated list when the request fails.
+ *
+ * @param apiKey - Google API key for Generative Language API.
+ * @returns Sorted list of model ids without the `models/` prefix.
+ */
 export async function listRelevantGeminiModels(apiKey: string): Promise<string[]> {
   try {
     const res = await fetch('https://generativelanguage.googleapis.com/v1beta/models', {

@@ -39,8 +39,8 @@ type StreamCallbacks = {
  * @param pluginParams - Configuration parameters for the plugin
  * @param toLocale - Target locale code
  * @param fromLocale - Source locale code
- * @param openai - OpenAI client instance
- * @param streamCallbacks - Optional callbacks for streaming translation updates
+ * @param provider - Translation provider used to perform the translation
+ * @param _streamCallbacks - Optional callbacks for streaming translation updates
  * @param recordContext - Additional context about the record being translated
  * @returns The translated text
  */

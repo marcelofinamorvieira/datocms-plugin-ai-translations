@@ -51,7 +51,7 @@ type StreamCallbacks = {
  * @param fromLocale - Source locale code for translation
  * @param provider - TranslationProvider instance
  * @param fieldTypePrompt - Additional prompt for SEO format instructions
- * @param streamCallbacks - Optional callbacks for streaming updates
+ * @param _streamCallbacks - Optional callbacks for streaming updates
  * @param recordContext - Optional context about the record being translated
  * @returns The translated SEO object
  */

@@ -19,8 +19,14 @@ export type DatoCMSRecordFromAPI = {
 };
 
 /**
- * Tries to derive a short human-friendly label for a record using common
- * title-like fields. Falls back to the record ID when needed.
+ * Derives a short human-friendly label for a record using common title-like
+ * fields (e.g., `title`, `name`, `headline`). It attempts localized values
+ * first using the provided `preferredLocale`, then falls back to any string
+ * value present, and finally to the record id.
+ *
+ * @param record - DatoCMS record object retrieved from the CMA.
+ * @param preferredLocale - Locale code to prefer when selecting a localized value.
+ * @returns A concise label usable in progress messages and alerts.
  */
 function deriveRecordLabel(record: DatoCMSRecordFromAPI, preferredLocale: string): string {
   const candidates = [

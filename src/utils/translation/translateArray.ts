@@ -1,3 +1,9 @@
+/**
+ * Vendor-agnostic utility to translate an array of strings, preserving
+ * placeholders and formatting tokens. Uses vendor-specific array APIs when
+ * available (DeepL) and falls back to a JSON-array prompting strategy for
+ * chat models (OpenAI, Gemini, Anthropic).
+ */
 import type { TranslationProvider } from './types';
 import { normalizeProviderError } from './ProviderErrors';
 import { mapDatoToDeepL, isFormalitySupported } from './DeepLMap';
@@ -38,6 +44,19 @@ function detokenize(text: string, map: TokenMap): string {
   return out;
 }
 
+/**
+ * Translates an array of string segments from one locale to another.
+ * Placeholders like `{{var}}`, `{slug}` and printf-style tokens are protected
+ * before sending to the provider and restored afterward.
+ *
+ * @param provider - Active translation provider.
+ * @param pluginParams - Plugin configuration and vendor-specific flags.
+ * @param segments - String segments to translate, kept in order.
+ * @param fromLocale - Source locale code (e.g. "en").
+ * @param toLocale - Target locale code (e.g. "pt-BR").
+ * @param opts - Options such as HTML mode and formality.
+ * @returns Translated segments with placeholders restored.
+ */
 export async function translateArray(
   provider: TranslationProvider,
   pluginParams: any,

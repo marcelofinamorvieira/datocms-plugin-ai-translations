@@ -1,12 +1,32 @@
+/**
+ * Canonical error shape used across providers to surface actionable messages
+ * and hints to the UI.
+ */
 export type NormalizedProviderError = {
   code: 'auth' | 'quota' | 'rate_limit' | 'model' | 'network' | 'unknown';
   message: string;
   hint?: string;
 };
 
+/**
+ * Case-insensitive substring check helper.
+ *
+ * @param s - String to inspect.
+ * @param needles - One or more substrings to search for.
+ * @returns True if any needle is found within `s` (case-insensitive).
+ */
 const includes = (s: unknown, ...needles: string[]) =>
   typeof s === 'string' && needles.some((n) => s.toLowerCase().includes(n.toLowerCase()));
 
+/**
+ * Normalizes provider-specific errors to a compact, user-friendly shape, with
+ * special handling for common authentication, quota, rate-limit and model
+ * errors. Includes targeted hints where we can determine a likely fix.
+ *
+ * @param err - Raw error thrown from a provider client or fetch call.
+ * @param vendor - Provider id for vendor-specific mappings.
+ * @returns A normalized error with `code`, `message`, and optional `hint`.
+ */
 export function normalizeProviderError(err: unknown, vendor: 'openai' | 'google' | 'anthropic' | 'deepl'): NormalizedProviderError {
   const anyErr = err as any;
   const status = anyErr?.status || anyErr?.code || anyErr?.response?.status;

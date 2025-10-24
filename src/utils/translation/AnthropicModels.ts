@@ -1,6 +1,10 @@
 // Dynamic model listing for Anthropic (Claude)
 // Docs: https://docs.anthropic.com/claude/reference/models_get
 
+/**
+ * Anthropic model metadata as returned by the Claude models API.
+ * Only a subset is used for filtering and sorting in the UI.
+ */
 export type AnthropicModel = {
   id: string; // e.g., "claude-3.5-haiku-latest"
   type?: string;
@@ -24,6 +28,14 @@ function scoreClaude(id: string): number {
   return score;
 }
 
+/**
+ * Lists relevant Claude models for text generation, excluding embeddings and
+ * ranking them by recency/latency/quality heuristics. Falls back to a small
+ * curated list when the API request fails (offline, bad key, etc.).
+ *
+ * @param apiKey - Anthropic API key used to query the models endpoint.
+ * @returns Sorted list of model ids (e.g. "claude-3.5-haiku-latest").
+ */
 export async function listRelevantAnthropicModels(apiKey: string): Promise<string[]> {
   try {
     const res = await fetch('https://api.anthropic.com/v1/models', {
@@ -46,4 +58,3 @@ export async function listRelevantAnthropicModels(apiKey: string): Promise<strin
     return ['claude-3.5-haiku-latest', 'claude-3.5-sonnet-latest'];
   }
 }
-

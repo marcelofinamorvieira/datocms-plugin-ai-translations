@@ -8,6 +8,11 @@ type AnthropicProviderConfig = {
   baseUrl?: string; // optional override
 };
 
+/**
+ * Anthropic Claude provider using the Messages API. Implements a lightweight
+ * fetch-based client and exposes streaming via single-yield (non-streaming
+ * on server) to conform to the TranslationProvider interface.
+ */
 export default class AnthropicProvider implements TranslationProvider {
   public readonly vendor: VendorId = 'anthropic';
   public readonly capabilities: ProviderCapabilities = { streaming: false };
@@ -17,6 +22,11 @@ export default class AnthropicProvider implements TranslationProvider {
   private readonly maxOutputTokens?: number;
   private readonly baseUrl: string;
 
+  /**
+   * Creates a Claude provider with the given configuration.
+   *
+   * @param cfg - API key, model id and optional tuning parameters.
+   */
   constructor(cfg: AnthropicProviderConfig) {
     this.apiKey = cfg.apiKey;
     this.model = cfg.model;
@@ -25,6 +35,12 @@ export default class AnthropicProvider implements TranslationProvider {
     this.baseUrl = cfg.baseUrl ?? 'https://api.anthropic.com/v1/messages';
   }
 
+  /**
+   * Yields the final response text once to emulate a streaming interface.
+   *
+   * @param prompt - Prompt text to send to the model.
+   * @param options - Optional abort signal.
+   */
   async *streamText(prompt: string, options?: StreamOptions): AsyncIterable<string> {
     // Non-streaming implementation: yield the final text once.
     const txt = await this.completeText(prompt, options);
@@ -33,6 +49,13 @@ export default class AnthropicProvider implements TranslationProvider {
     }
   }
 
+  /**
+   * Calls the Anthropic Messages API and returns concatenated text parts.
+   *
+   * @param prompt - Prompt text to send to the model.
+   * @param options - Optional abort signal.
+   * @returns Response text string.
+   */
   async completeText(prompt: string, options?: StreamOptions): Promise<string> {
     const controller = new AbortController();
     const signal = options?.abortSignal;
@@ -83,4 +106,3 @@ export default class AnthropicProvider implements TranslationProvider {
     return parts.join('');
   }
 }
-
