@@ -9,6 +9,8 @@ type DeepLTranslateOpts = {
   ignoreTags?: string[];
   nonSplittingTags?: string[];
   splittingTags?: string[];
+  /** Optional DeepL glossary id to apply for this source→target pair. */
+  glossaryId?: string;
 };
 
 /**
@@ -77,21 +79,37 @@ export default class DeepLProvider implements TranslationProvider {
       const postUrl = this.proxyUrl
         ? this.proxyUrl.replace(/\/$/, '') + '/v2/translate'
         : url;
-      const body: Record<string, unknown> = {
-        text: slice,
-        target_lang: opts.targetLang,
+      const makeBody = (injectGlossary: boolean): Record<string, unknown> => {
+        const body: Record<string, unknown> = {
+          text: slice,
+          target_lang: opts.targetLang,
+        };
+        if (opts.sourceLang) body.source_lang = opts.sourceLang;
+        if (opts.isHTML) body.tag_handling = 'html';
+        if (opts.formality && opts.formality !== 'default') body.formality = opts.formality;
+        // JSON API expects a boolean here; using '0'/'1' causes
+        // "Value for 'preserve_formatting' not supported".
+        body.preserve_formatting = opts.preserveFormatting !== false;
+        if (opts.ignoreTags?.length) body.ignore_tags = opts.ignoreTags;
+        if (opts.nonSplittingTags?.length) body.non_splitting_tags = opts.nonSplittingTags;
+        if (opts.splittingTags?.length) body.splitting_tags = opts.splittingTags;
+        if (injectGlossary && opts.glossaryId) body.glossary_id = opts.glossaryId;
+        return body;
       };
-      if (opts.sourceLang) body.source_lang = opts.sourceLang;
-      if (opts.isHTML) body.tag_handling = 'html';
-      if (opts.formality && opts.formality !== 'default') body.formality = opts.formality;
-      // JSON API expects a boolean here; using '0'/'1' causes
-      // "Value for 'preserve_formatting' not supported".
-      body.preserve_formatting = opts.preserveFormatting !== false;
-      if (opts.ignoreTags?.length) body.ignore_tags = opts.ignoreTags;
-      if (opts.nonSplittingTags?.length) body.non_splitting_tags = opts.nonSplittingTags;
-      if (opts.splittingTags?.length) body.splitting_tags = opts.splittingTags;
 
-      const res = await fetch(postUrl, { method: 'POST', headers, body: JSON.stringify(body) });
+      // First attempt: include glossary if provided
+      let res = await fetch(postUrl, { method: 'POST', headers, body: JSON.stringify(makeBody(!!opts.glossaryId)) });
+      if (!res.ok) {
+        let msg = res.statusText;
+        let raw: any = null;
+        try { raw = await res.json(); msg = raw?.message || raw?.error?.message || msg; } catch {}
+        const isGlossaryMismatch = /glossary/i.test(msg) && /(language|pair|match|not found)/i.test(msg);
+        // Graceful fallback: if glossary caused a 4xx, retry once without it
+        if (opts.glossaryId && isGlossaryMismatch && res.status >= 400 && res.status < 500) {
+          res = await fetch(postUrl, { method: 'POST', headers, body: JSON.stringify(makeBody(false)) });
+        }
+      }
+
       if (!res.ok) {
         let msg = res.statusText;
         try { const err = await res.json(); msg = err?.message || err?.error?.message || msg; } catch {}
@@ -109,6 +127,7 @@ export default class DeepLProvider implements TranslationProvider {
         (e as any).status = res.status;
         throw e;
       }
+
       const data = await res.json();
       const translations: string[] = Array.isArray(data?.translations) ? data.translations.map((t: any) => String(t?.text ?? '')) : [];
       for (let j=0; j<slice.length; j++) out[i+j] = translations[j] ?? slice[j];

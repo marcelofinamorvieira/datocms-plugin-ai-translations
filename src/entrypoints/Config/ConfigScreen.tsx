@@ -54,6 +54,9 @@ export type ctxParamsType = {
   deeplNonSplittingTags?: string;
   deeplSplittingTags?: string;
   deeplProxyUrl?: string;
+  // DeepL glossary settings
+  deeplGlossaryId?: string; // default glossary id (optional)
+  deeplGlossaryPairs?: string; // per-pair mapping text (optional)
   translationFields: string[]; // List of field editor types that can be translated
   translateWholeRecord: boolean; // Whether to allow entire record translation
   translateBulkRecords: boolean; // Whether to allow bulk records translation in tabular view
@@ -147,6 +150,8 @@ const updatePluginParams = async (
   deeplNonSplittingTags: string,
   deeplSplittingTags: string,
   deeplProxyUrl: string,
+  deeplGlossaryId: string,
+  deeplGlossaryPairs: string,
   translationFields: string[],
   translateWholeRecord: boolean,
   translateBulkRecords: boolean,
@@ -175,6 +180,8 @@ const updatePluginParams = async (
       deeplNonSplittingTags,
       deeplSplittingTags,
       deeplProxyUrl,
+      deeplGlossaryId,
+      deeplGlossaryPairs,
       translationFields,
       translateWholeRecord,
       translateBulkRecords,
@@ -224,6 +231,8 @@ export default function ConfigScreen({ ctx }: { ctx: RenderConfigScreenCtx }) {
   const [deeplNonSplittingTags, setDeeplNonSplittingTags] = useState<string>(pluginParams.deeplNonSplittingTags ?? 'a,code,pre,strong,em,ph,notranslate');
   const [deeplSplittingTags, setDeeplSplittingTags] = useState<string>(pluginParams.deeplSplittingTags ?? '');
   const [deeplProxyUrl, setDeeplProxyUrl] = useState<string>(pluginParams.deeplProxyUrl ?? '');
+  const [deeplGlossaryId, setDeeplGlossaryId] = useState<string>(pluginParams.deeplGlossaryId ?? '');
+  const [deeplGlossaryPairs, setDeeplGlossaryPairs] = useState<string>(pluginParams.deeplGlossaryPairs ?? '');
   const [showDeeplAdvanced, setShowDeeplAdvanced] = useState<boolean>(false);
   const [isTestingProxy, setIsTestingProxy] = useState<boolean>(false);
   const [testProxyMessage, setTestProxyMessage] = useState<string>('');
@@ -474,6 +483,8 @@ export default function ConfigScreen({ ctx }: { ctx: RenderConfigScreenCtx }) {
     deeplNonSplittingTags !== (pluginParams.deeplNonSplittingTags ?? 'a,code,pre,strong,em,ph,notranslate') ||
     deeplSplittingTags !== (pluginParams.deeplSplittingTags ?? '') ||
     deeplProxyUrl !== (pluginParams.deeplProxyUrl ?? '') ||
+    deeplGlossaryId !== (pluginParams.deeplGlossaryId ?? '') ||
+    deeplGlossaryPairs !== (pluginParams.deeplGlossaryPairs ?? '') ||
       gptModel !== (pluginParams.gptModel ?? 'None') ||
       sortedSelectedFields !== sortedConfiguredFields ||
       translateWholeRecord !== (pluginParams.translateWholeRecord ?? true) ||
@@ -523,6 +534,8 @@ export default function ConfigScreen({ ctx }: { ctx: RenderConfigScreenCtx }) {
     pluginParams.deeplNonSplittingTags,
     pluginParams.deeplSplittingTags,
     pluginParams.deeplProxyUrl,
+    pluginParams.deeplGlossaryId,
+    pluginParams.deeplGlossaryPairs,
     pluginParams.gptModel,
     pluginParams.translationFields,
     pluginParams.translateWholeRecord,
@@ -884,6 +897,51 @@ export default function ConfigScreen({ ctx }: { ctx: RenderConfigScreenCtx }) {
                   />
                 </div>
 
+                {/* Glossary settings */}
+                <div className={s.fieldSpacing}>
+                  <label className={s.label} htmlFor="deeplGlossaryId" style={{ display: 'flex', alignItems: 'center' }}>
+                    Default glossary ID
+                    <div className={s.tooltipContainer}>
+                      ⓘ
+                      <div className={`${s.tooltipText} ${s.leftAnchorTooltip}`}>
+                        Optional DeepL glossary ID (e.g., gls-abc123) applied when
+                        translating with DeepL. You can override per language pair
+                        via the mapping below.
+                      </div>
+                    </div>
+                  </label>
+                  <TextField
+                    name="deeplGlossaryId"
+                    id="deeplGlossaryId"
+                    label=""
+                    value={deeplGlossaryId}
+                    onChange={setDeeplGlossaryId}
+                    placeholder="gls-..."
+                  />
+                </div>
+
+                <div className={s.fieldSpacing}>
+                  <label className={s.label} htmlFor="deeplGlossaryPairs" style={{ display: 'flex', alignItems: 'center' }}>
+                    Glossaries by language pair
+                    <div className={s.tooltipContainer}>
+                      ⓘ
+                      <div className={`${s.tooltipText} ${s.leftAnchorTooltip}`}>
+                        One per line. Use either Dato locales or DeepL codes.
+                        Supports wildcards, e.g. *-&gt;pt-BR=gls-123 (any source to pt-BR).
+                        Examples: EN-&gt;DE=gls-abc123, en-US-&gt;pt-BR: gls-xyz789, *-&gt;de=gls-777
+                      </div>
+                    </div>
+                  </label>
+                  <ReactTextareaAutosize
+                    className={s.textarea}
+                    id="deeplGlossaryPairs"
+                    value={deeplGlossaryPairs}
+                    onChange={(e) => setDeeplGlossaryPairs(e.target.value)}
+                    minRows={2}
+                    placeholder={"EN->DE=gls-...\nen-US->pt-BR=gls-..."}
+                  />
+                </div>
+
                 {/* Proxy moved to required field above */}
               </div>
             )}
@@ -1187,6 +1245,8 @@ export default function ConfigScreen({ ctx }: { ctx: RenderConfigScreenCtx }) {
                 deeplNonSplittingTags,
                 deeplSplittingTags,
                 deeplProxyUrl,
+                deeplGlossaryId,
+                deeplGlossaryPairs,
                 translationFields,
                 translateWholeRecord,
                 translateBulkRecords,

@@ -7,6 +7,7 @@
 import type { TranslationProvider } from './types';
 import { normalizeProviderError } from './ProviderErrors';
 import { mapDatoToDeepL, isFormalitySupported } from './DeepLMap';
+import { resolveGlossaryId } from './DeepLGlossary';
 
 type Options = {
   isHTML?: boolean;
@@ -92,6 +93,7 @@ export async function translateArray(
         ignoreTags: ['notranslate', 'ph'],
         nonSplittingTags: ['a','code','pre','strong','em','ph','notranslate'],
         splittingTags: [],
+        glossaryId: resolveGlossaryId(pluginParams, fromLocale, toLocale),
       });
     } else {
       // Chat vendors: JSON-array prompt

@@ -270,6 +270,94 @@ That’s it — once your proxy passes the test, DeepL translations (including l
 See also
 - CLI step‑by‑steps for deploying a proxy (Cloudflare, Vercel, Netlify): docs/DeepL-Proxy-CLI.md
 
+## DeepL Glossaries
+
+The plugin supports DeepL glossaries to enforce preferred terminology. You can set a default glossary ID and/or map specific language pairs to specific glossary IDs. This works for all field types, including Structured Text.
+
+### Requirements
+
+- A DeepL API key with access to Glossaries. Check your DeepL account/plan capabilities.
+- The same proxy described above; translations with a glossary still call `POST <proxy>/v2/translate` with an extra `glossary_id` in the JSON body.
+
+### Configure in the Plugin
+
+1. Open Settings → vendor “DeepL”.
+2. Set “Proxy URL” and verify it via “Test proxy”.
+3. Expand “Advanced settings”.
+4. Optional: set “Default glossary ID” (e.g., `gls-abc123`).
+5. Optional: fill in “Glossaries by language pair” with one mapping per line.
+
+You can use either DatoCMS locales (e.g., `en-US`, `pt-BR`) or DeepL codes (e.g., `EN`, `PT-BR`). The plugin normalizes both to DeepL codes internally.
+
+### Mapping Syntax
+
+One entry per line. Supported forms:
+
+```
+EN->DE=gls-abc123
+en-US->pt-BR=gls-xyz789
+fr→it gls-123                 # alt arrow and delimiter
+*->pt-BR=gls-777              # wildcard: any source to target
+EN->*=gls-555                 # wildcard: source to any target
+pt-BR=gls-777                 # shorthand for *->pt-BR
+```
+
+Delimiters: `=`, `:`, or whitespace. Arrows: `->`, `→`, `⇒` (all treated the same). Case is ignored.
+
+### Resolution Order
+
+When translating from `fromLocale` → `toLocale`, the plugin picks a glossary ID using this precedence:
+
+1. Exact pair match by DeepL codes (e.g., `EN:PT-BR`).
+2. Exact pair match by your raw locales (e.g., `en-US:pt-BR`).
+3. Wildcard any→target (e.g., `*:PT-BR` or `*:pt-BR`).
+4. Wildcard source→any (e.g., `EN:*` or `en-US:*`).
+5. Default glossary ID (if set).
+6. Otherwise, no glossary is used.
+
+If DeepL returns a glossary mismatch (e.g., glossary languages don’t match the current pair) or a missing glossary, the plugin automatically retries the same request once without a glossary so your translation continues. A brief hint is surfaced in the UI logs.
+
+### Finding or Creating a Glossary ID
+
+The plugin only needs the `glossary_id` string. You can create and list glossaries with the DeepL API from your own machine or server. Examples with cURL:
+
+List glossaries
+```
+curl -H "Authorization: DeepL-Auth-Key $DEEPL_AUTH_KEY" \
+     https://api.deepl.com/v2/glossaries
+```
+
+Create a small glossary inline (tab-separated entries)
+```
+curl -X POST https://api.deepl.com/v2/glossaries \
+  -H "Authorization: DeepL-Auth-Key $DEEPL_AUTH_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Marketing-EN-DE",
+    "source_lang": "EN",
+    "target_lang": "DE",
+    "entries_format": "tsv",
+    "entries": "CTA\tCall-to-Action\nlead magnet\tLeadmagnet"
+  }'
+```
+
+Note: If your account uses the Free endpoint, replace the host with `https://api-free.deepl.com`.
+
+You do not need to expose `/v2/glossaries` through your proxy for the plugin to work — it only calls `/v2/translate`. Manage glossaries from your server/CLI, then paste the resulting IDs into the plugin settings.
+
+### Tips and Limitations
+
+- Glossaries apply only to the DeepL vendor. OpenAI/Gemini/Anthropic do not use glossaries.
+- The plugin preserves placeholders and HTML tags automatically (`notranslate`, `ph`, etc.). Glossaries will not alter those tokens.
+- If you use DeepL “formality”, it is sent only for targets that support it; otherwise omitted.
+- A wrong Pro/Free endpoint for your key will still raise the “Wrong endpoint” hint shown in settings and translation errors.
+
+### Quick Sanity Test
+
+1. Create a small EN→DE glossary with an obvious term (e.g., “CTA” → “Call‑to‑Action”).
+2. In Settings → DeepL, paste the glossary ID into either Default or the `EN->DE=...` mapping.
+3. Translate a field from EN to DE containing “CTA”. The resulting German text should include your glossary translation.
+
 ## Migration Notes
 
 - Existing installations continue to work with OpenAI by default; your current `apiKey` and `gptModel` remain valid.
