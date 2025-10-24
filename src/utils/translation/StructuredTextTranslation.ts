@@ -59,20 +59,123 @@ function ensureArrayLengthsMatch(originalValues: string[], translatedValues: str
     return translatedValues;
   }
   
-  // If too few elements, pad with values from the original array
+  // If too few elements, pad with the original values verbatim (including pure whitespace)
+  // so that structural spaces between inline nodes are preserved.
   if (translatedValues.length < originalValues.length) {
     return [
       ...translatedValues,
-      ...originalValues.slice(translatedValues.length).map(val => 
-        // If it's an empty string, keep it empty
-        // Otherwise use the original value
-        val.trim() === '' ? '' : val
-      )
+      ...originalValues.slice(translatedValues.length)
     ];
   }
   
   // If too many elements, truncate to match original length
   return translatedValues.slice(0, originalValues.length);
+}
+
+/**
+ * Preserves leading/trailing whitespace from the original strings onto the
+ * translated strings. Many providers trim edges of segments when splitting
+ * inline nodes (e.g., around bold/links), which causes words to concatenate
+ * across boundaries. This re-applies the exact edge whitespace from the
+ * original extracted nodes.
+ */
+function preserveEdgeWhitespace(originalValues: string[], translatedValues: string[]): string[] {
+  const out: string[] = new Array(translatedValues.length);
+  const isWsOnly = (s: string) => s === '' || /^[\s\u00A0]+$/.test(s);
+  for (let i = 0; i < translatedValues.length; i++) {
+    const orig = String(originalValues[i] ?? '');
+    const tr = String(translatedValues[i] ?? '');
+    if (isWsOnly(orig)) {
+      // Keep pure whitespace nodes exactly as in the original
+      out[i] = orig;
+      continue;
+    }
+    const leading = (orig.match(/^\s+/) || [''])[0];
+    const trailing = (orig.match(/\s+$/) || [''])[0];
+
+    let s = tr; // do NOT trim; only add missing edges when the original had them
+    if (leading && !/^\s/.test(s)) s = `${leading}${s}`;
+    if (trailing && !/\s$/.test(s)) s = `${s}${trailing}`;
+    out[i] = s;
+  }
+  return out;
+}
+
+/**
+ * Aligns translated segments back to the positions of the originals while
+ * preserving pure-whitespace segments exactly where they were. Many models
+ * drop or merge whitespace-only nodes; this ensures spacing nodes remain in
+ * their original slots so that formatting boundaries don't eat spaces.
+ */
+function alignSegmentsPreservingWhitespace(originalValues: string[], translatedValues: string[]): string[] {
+  const out: string[] = [];
+  let j = 0;
+  const isWsOnly = (s: string) => s === '' || /^[\s\u00A0]+$/.test(s);
+  for (let i = 0; i < originalValues.length; i++) {
+    const orig = String(originalValues[i] ?? '');
+    if (isWsOnly(orig)) {
+      out.push(orig); // keep exact whitespace segment in place
+    } else {
+      const tr = j < translatedValues.length ? String(translatedValues[j++]) : orig;
+      out.push(tr);
+    }
+  }
+  return out;
+}
+
+/**
+ * Ensures that boundaries between adjacent non-whitespace segments keep a
+ * separating space when the original had one either at the end of the left
+ * segment or at the start of the right segment. This guards against models
+ * trimming edges and losing the space after inline marks (bold/links).
+ */
+function enforceBoundarySpaces(originalValues: string[], processed: string[]): string[] {
+  const isWsOnly = (s: string) => s === '' || /^[\s\u00A0]+$/.test(s);
+  const out = processed.slice();
+  for (let i = 0; i < originalValues.length - 1; i++) {
+    const oL = String(originalValues[i] ?? '');
+    const oR = String(originalValues[i + 1] ?? '');
+    // If either side is a dedicated whitespace segment, leave as-is
+    if (isWsOnly(oL) || isWsOnly(oR)) continue;
+
+    const needSpace = /[\s\u00A0]$/.test(oL) || /^[\s\u00A0]/.test(oR);
+    if (!needSpace) continue;
+
+    const pL = String(out[i] ?? '');
+    const pR = String(out[i + 1] ?? '');
+    const leftHas = /[\s\u00A0]$/.test(pL);
+    const rightHas = /^[\s\u00A0]/.test(pR);
+    if (!leftHas && !rightHas) {
+      out[i] = pL + ' ';
+    }
+  }
+  return out;
+}
+
+/**
+ * Additional guard: if the original left segment ended with punctuation
+ * (comma/semicolon/colon/period/exclamation/question) but the translated
+ * boundary has no punctuation and no space, inject a single space. This
+ * covers cases where translators drop the comma inside a bold span and the
+ * following word becomes attached.
+ */
+function enforcePunctuationBoundarySpaces(originalValues: string[], processed: string[]): string[] {
+  const out = processed.slice();
+  for (let i = 0; i < originalValues.length - 1; i++) {
+    const oL = String(originalValues[i] ?? '');
+    const oR = String(originalValues[i + 1] ?? '');
+    const endsPunctLeft = /[\.,;:!?]$/.test(oL.trimEnd());
+    const startsPunctRight = /^[\.,;:!?]/.test(oR.trimStart());
+    if (!endsPunctLeft && !startsPunctRight) continue;
+    const pL = String(out[i] ?? '');
+    const pR = String(out[i + 1] ?? '');
+    const boundaryHasSpace = /[\s\u00A0]$/.test(pL) || /^[\s\u00A0]/.test(pR);
+    const boundaryHasPunct = /[\.,;:!?]$/.test(pL) || /^[\.,;:!?]/.test(pR);
+    if (!boundaryHasSpace && !boundaryHasPunct) {
+      out[i] = pL + ' ';
+    }
+  }
+  return out;
 }
 
 /**
@@ -226,13 +329,25 @@ IMPORTANT: Your response must be a valid JSON array of strings with EXACTLY ${te
           { original: textValues, translated: translatedValues }
         );
         
-        // Try to fix the length mismatch rather than abandoning the translation
-        processedTranslatedValues = ensureArrayLengthsMatch(textValues, translatedValues);
+        // First align segments so pure-whitespace originals stay in-place
+        processedTranslatedValues = alignSegmentsPreservingWhitespace(textValues, translatedValues);
+        // If still off, pad/truncate conservatively
+        if (processedTranslatedValues.length !== textValues.length) {
+          processedTranslatedValues = ensureArrayLengthsMatch(textValues, processedTranslatedValues);
+        }
         
         logger.info('Adjusted translated values to match original length', {
           adjustedLength: processedTranslatedValues.length
         });
       }
+
+      // Re-apply original edge whitespace to avoid word concatenation across inline nodes
+      processedTranslatedValues = preserveEdgeWhitespace(textValues, processedTranslatedValues);
+      // Finally, enforce required boundary spaces when the original had them
+      processedTranslatedValues = enforceBoundarySpaces(textValues, processedTranslatedValues);
+      // And if the original left ended with punctuation but translator dropped it,
+      // still keep a separating space.
+      processedTranslatedValues = enforcePunctuationBoundarySpaces(textValues, processedTranslatedValues);
 
       // Reconstruct the inline text portion with the newly translated text
       const reconstructedObject = reconstructObject(

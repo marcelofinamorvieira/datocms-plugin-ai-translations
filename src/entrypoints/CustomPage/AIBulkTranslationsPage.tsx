@@ -103,7 +103,7 @@ export default function AIBulkTranslationsPage({ ctx }: PropTypes) {
     const hasOpenAI = !!pluginParams.apiKey && !!pluginParams.gptModel && pluginParams.gptModel !== 'None';
     const hasGoogle = !!pluginParams.googleApiKey && !!pluginParams.geminiModel;
     const hasAnthropic = !!pluginParams.anthropicApiKey && !!pluginParams.anthropicModel;
-    const hasDeepL = !!(pluginParams as any).deeplApiKey && !!(pluginParams as any).deeplProxyUrl;
+    const hasDeepL = !!(pluginParams as any).deeplProxyUrl;
     const configured = vendor === 'google' ? hasGoogle : vendor === 'anthropic' ? hasAnthropic : vendor === 'deepl' ? hasDeepL : hasOpenAI;
     if (!configured) {
       ctx.alert('Please configure valid credentials for the selected AI vendor in the plugin settings');

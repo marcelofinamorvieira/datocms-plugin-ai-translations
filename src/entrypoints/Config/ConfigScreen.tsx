@@ -46,7 +46,6 @@ export type ctxParamsType = {
   anthropicApiKey?: string;
   anthropicModel?: string;
   // DeepL settings
-  deeplApiKey?: string;
   deeplEndpoint?: 'auto'|'pro'|'free';
   deeplUseFree?: boolean;
   deeplFormality?: 'default'|'more'|'less';
@@ -140,7 +139,6 @@ const updatePluginParams = async (
   geminiModel: string,
   anthropicApiKey: string,
   anthropicModel: string,
-  deeplApiKey: string,
   deeplEndpoint: 'auto'|'pro'|'free',
   deeplUseFree: boolean,
   deeplFormality: 'default'|'more'|'less',
@@ -169,7 +167,6 @@ const updatePluginParams = async (
       geminiModel,
       anthropicApiKey,
       anthropicModel,
-      deeplApiKey,
       deeplEndpoint,
       deeplUseFree,
       deeplFormality,
@@ -219,7 +216,6 @@ export default function ConfigScreen({ ctx }: { ctx: RenderConfigScreenCtx }) {
   const [geminiModel, setGeminiModel] = useState(pluginParams.geminiModel ?? 'gemini-1.5-flash');
   const [anthropicApiKey, setAnthropicApiKey] = useState(pluginParams.anthropicApiKey ?? '');
   const [anthropicModel, setAnthropicModel] = useState(pluginParams.anthropicModel ?? 'claude-3.5-haiku-latest');
-  const [deeplApiKey, setDeeplApiKey] = useState(pluginParams.deeplApiKey ?? '');
   const [deeplEndpoint, _setDeeplEndpoint] = useState<'auto'|'pro'|'free'>(pluginParams.deeplEndpoint ?? 'auto');
   const [deeplUseFree, setDeeplUseFree] = useState<boolean>(pluginParams.deeplUseFree ?? false);
   const [deeplFormality, setDeeplFormality] = useState<'default'|'more'|'less'>(pluginParams.deeplFormality ?? 'default');
@@ -470,7 +466,6 @@ export default function ConfigScreen({ ctx }: { ctx: RenderConfigScreenCtx }) {
     geminiModel !== (pluginParams.geminiModel ?? 'gemini-1.5-flash') ||
     anthropicApiKey !== (pluginParams.anthropicApiKey ?? '') ||
     anthropicModel !== (pluginParams.anthropicModel ?? 'claude-3.5-haiku-latest') ||
-    deeplApiKey !== (pluginParams.deeplApiKey ?? '') ||
     deeplEndpoint !== (pluginParams.deeplEndpoint ?? 'auto') ||
     deeplUseFree !== (pluginParams.deeplUseFree ?? false) ||
     deeplFormality !== (pluginParams.deeplFormality ?? 'default') ||
@@ -501,7 +496,6 @@ export default function ConfigScreen({ ctx }: { ctx: RenderConfigScreenCtx }) {
     translateWholeRecord,
     translateBulkRecords,
     prompt,
-    deeplApiKey,
     deeplEndpoint,
     deeplUseFree,
     deeplFormality,
@@ -521,7 +515,6 @@ export default function ConfigScreen({ ctx }: { ctx: RenderConfigScreenCtx }) {
     pluginParams.geminiModel,
     pluginParams.anthropicApiKey,
     pluginParams.anthropicModel,
-    pluginParams.deeplApiKey,
     pluginParams.deeplEndpoint,
     pluginParams.deeplUseFree,
     pluginParams.deeplFormality,
@@ -738,19 +731,6 @@ export default function ConfigScreen({ ctx }: { ctx: RenderConfigScreenCtx }) {
           </>
         ) : (
           <>
-            {/* DeepL API Key */}
-            <div className={s.fieldSpacing}>
-              <TextField
-                required
-                name="deeplApiKey"
-                id="deeplApiKey"
-                label="DeepL API Key"
-                value={deeplApiKey}
-                onChange={(v) => setDeeplApiKey(v)}
-                placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx:fx"
-              />
-            </div>
-
             {/* Proxy URL (REQUIRED) with tooltip explaining CORS */}
             <div className={s.fieldSpacing}>
               <label className={s.label} htmlFor="deeplProxyUrl" style={{ display: 'flex', alignItems: 'center' }}>
@@ -776,16 +756,24 @@ export default function ConfigScreen({ ctx }: { ctx: RenderConfigScreenCtx }) {
               <div className={`${s.switchField} ${s.buttonRow}`}>
                 <Button
                   buttonType="muted"
+                  onClick={() => {
+                    const url = 'https://github.com/marcelofinamorvieira/datocms-plugin-ai-translations/blob/master/docs/DeepL-Proxy-CLI.md';
+                    try { window.open(url, '_blank', 'noopener'); } catch { ctx.notice('Open this URL: ' + url); }
+                  }}
+                >
+                  How to set up this proxy
+                </Button>
+                <Button
+                  buttonType="muted"
                   disabled={isTestingProxy}
                   onClick={async () => {
-                    if (!deeplApiKey) { setTestProxyStatus('error'); setTestProxyMessage('Enter your DeepL API Key first.'); return; }
                     if (!deeplProxyUrl) { setTestProxyStatus('error'); setTestProxyMessage('Enter a Proxy URL first.'); return; }
                     setTestProxyMessage('');
                     setTestProxyStatus('idle');
                     setIsTestingProxy(true);
                     try {
                       const base = deeplUseFree ? 'https://api-free.deepl.com' : 'https://api.deepl.com';
-                      const provider = new DeepLProvider({ apiKey: deeplApiKey, baseUrl: base, proxyUrl: deeplProxyUrl });
+                      const provider = new DeepLProvider({ apiKey: '', baseUrl: base, proxyUrl: deeplProxyUrl });
                       const out = await provider.translateArray(['Hello world'], { targetLang: 'DE' });
                       const sample = (out?.[0] ?? '').toString();
                       if (sample) {
@@ -1149,7 +1137,7 @@ export default function ConfigScreen({ ctx }: { ctx: RenderConfigScreenCtx }) {
               (vendor === 'openai' && (gptModel === 'None' || !apiKey)) ||
               (vendor === 'google' && (!googleApiKey || !geminiModel)) ||
               (vendor === 'anthropic' && (!anthropicApiKey || !anthropicModel)) ||
-              (vendor === 'deepl' && (!deeplApiKey || !deeplProxyUrl)) ||
+              (vendor === 'deepl' && (!deeplProxyUrl)) ||
               ([...translationFields].sort().join(',') ===
                 Object.keys(translateFieldTypes).sort().join(',') &&
                 translateWholeRecord === true &&
@@ -1191,7 +1179,6 @@ export default function ConfigScreen({ ctx }: { ctx: RenderConfigScreenCtx }) {
                 geminiModel,
                 anthropicApiKey,
                 anthropicModel,
-                deeplApiKey,
                 deeplEndpoint,
                 deeplUseFree,
                 deeplFormality,

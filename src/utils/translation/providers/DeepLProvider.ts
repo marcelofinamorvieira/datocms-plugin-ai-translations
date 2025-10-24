@@ -55,10 +55,12 @@ export default class DeepLProvider implements TranslationProvider {
       if (opts.sourceLang) body.source_lang = opts.sourceLang;
       if (opts.isHTML) body.tag_handling = 'html';
       if (opts.formality && opts.formality !== 'default') body.formality = opts.formality;
-      body.preserve_formatting = opts.preserveFormatting === false ? '0' : '1';
-      if (opts.ignoreTags?.length) body.ignore_tags = opts.ignoreTags.join(',');
-      if (opts.nonSplittingTags?.length) body.non_splitting_tags = opts.nonSplittingTags.join(',');
-      if (opts.splittingTags?.length) body.splitting_tags = opts.splittingTags.join(',');
+      // JSON API expects a boolean here; using '0'/'1' causes
+      // "Value for 'preserve_formatting' not supported".
+      body.preserve_formatting = opts.preserveFormatting !== false;
+      if (opts.ignoreTags?.length) body.ignore_tags = opts.ignoreTags;
+      if (opts.nonSplittingTags?.length) body.non_splitting_tags = opts.nonSplittingTags;
+      if (opts.splittingTags?.length) body.splitting_tags = opts.splittingTags;
 
       const res = await fetch(postUrl, { method: 'POST', headers, body: JSON.stringify(body) });
       if (!res.ok) {

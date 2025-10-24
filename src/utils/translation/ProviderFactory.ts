@@ -39,7 +39,7 @@ export function getProvider(pluginParams: ctxParamsType): TranslationProvider {
   }
 
   if (vendor === 'deepl') {
-    const apiKey = (pluginParams as any).deeplApiKey || '';
+    const apiKey = '';
     const useFreeToggle = (pluginParams as any).deeplUseFree === true;
     const endpointSetting = (pluginParams as any).deeplEndpoint || 'auto';
     // Resolve endpoint: honor explicit setting; otherwise decide based on toggle or key suffix (:fx = Free)
@@ -50,7 +50,7 @@ export function getProvider(pluginParams: ctxParamsType): TranslationProvider {
       : (useFreeToggle || /:fx\b/i.test(apiKey));
     const baseUrl = shouldUseFree ? 'https://api-free.deepl.com' : 'https://api.deepl.com';
     const proxyUrl = (pluginParams as any).deeplProxyUrl || '';
-    if (apiKey) {
+    if (proxyUrl) {
       const key = `deepl:${apiKey}:${baseUrl}:${proxyUrl}`;
       const cached = cache.get(key);
       if (cached) return cached;

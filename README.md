@@ -213,6 +213,11 @@ Deploy
 - `vercel deploy` (or push to GitHub with Vercel connected).
 - Set env vars, redeploy, then use `https://your-app.vercel.app/api/deepl` as the “Proxy URL”.
 
+Note on Vercel Deployment Protection
+- If your Vercel organization enforces Deployment Protection, unauthenticated public requests return 401.
+- Go to Vercel → Project → Settings → Deployment Protection and either disable protection for this project or add a public bypass so DatoCMS can call the endpoint.
+- After changing this setting, the proxy should be reachable from the plugin’s “Test proxy” and during translations.
+
 ### Option C: Netlify Functions
 
 Environment vars (Netlify dashboard → Site settings → Environment):
@@ -254,6 +259,11 @@ Deploy
 - CORS errors: ensure your proxy responds to OPTIONS and includes `Access-Control-Allow-Origin`.
 - 414/URI too long: means you’re not POSTing a body through your proxy. The examples above use POST and won’t hit this.
 - 429/Rate limit: lower concurrency or try smaller batches; upgrade plan if needed.
+
+Endpoint selection (Free vs Pro)
+- The example proxies choose the upstream via an environment variable `DEEPL_BASE_URL`.
+- Set `DEEPL_BASE_URL` to `https://api-free.deepl.com` if your key ends with `:fx` (DeepL Free), otherwise to `https://api.deepl.com` (Pro).
+- In the plugin settings, the toggle “Use DeepL Free endpoint (api-free.deepl.com)” should match the proxy’s `DEEPL_BASE_URL` so errors and validations are consistent. A mismatch will surface as a “Wrong endpoint for your API key” error.
 
 That’s it — once your proxy passes the test, DeepL translations (including large Structured Text fields) will work end‑to‑end.
 

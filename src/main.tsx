@@ -83,7 +83,7 @@ connect({
     const hasOpenAI = !!pluginParams.apiKey && !!pluginParams.gptModel && pluginParams.gptModel !== 'None';
     const hasGoogle = !!pluginParams.googleApiKey && !!pluginParams.geminiModel;
     const hasAnthropic = !!(pluginParams as any).anthropicApiKey && !!(pluginParams as any).anthropicModel;
-    const hasDeepL = !!(pluginParams as any).deeplApiKey && !!(pluginParams as any).deeplProxyUrl;
+    const hasDeepL = !!(pluginParams as any).deeplProxyUrl;
     const hasCreds = vendor === 'google' ? hasGoogle : vendor === 'anthropic' ? hasAnthropic : vendor === 'deepl' ? hasDeepL : hasOpenAI;
     if (!hasCreds) {
       ctx.alert('Please configure credentials for the selected AI vendor in the settings page');
