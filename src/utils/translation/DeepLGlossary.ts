@@ -9,13 +9,17 @@ import { mapDatoToDeepL } from './DeepLMap';
 
 /**
  * Parses a user-provided mapping of glossary ids by language pair.
+ *
  * Accepts lines in the following flexible formats (case-insensitive):
- *   EN->DE=gls-abc123
- *   en-us -> pt-br : gls-xyz789
+ *   EN-\>DE=gls-abc123
+ *   en-us -\> pt-br : gls-xyz789
  *   fr→it gls-123
- *   *->pt-BR=gls-777        (any source to target)
- *   pt-BR=gls-777           (shorthand for *->pt-BR)
+ *   *-\>pt-BR=gls-777        (any source to target)
+ *   pt-BR=gls-777           (shorthand for *-\>pt-BR)
  * Delimiters supported between pair and id: '=', ':', whitespace.
+ *
+ * @param input - Optional mapping text entered by the user.
+ * @returns A normalized map keyed as "SRC:TGT" (uppercased) to glossary id.
  */
 export function parseGlossaryMap(input?: string): Record<string, string> {
   const map: Record<string, string> = {};
@@ -43,8 +47,13 @@ export function parseGlossaryMap(input?: string): Record<string, string> {
 /**
  * Resolves the glossary id to use for the pair (fromLocale → toLocale),
  * trying per-pair mappings first and falling back to a default id.
- * Keys in the mapping may use Dato locales (e.g., en-US->pt-BR) or DeepL
- * codes (e.g., EN->PT-BR). Both are normalized to DeepL codes internally.
+ * Keys in the mapping may use Dato locales (e.g., en-US-\>pt-BR) or DeepL
+ * codes (e.g., EN-\>PT-BR). Both are normalized to DeepL codes internally.
+ *
+ * @param params - Plugin params object containing `deeplGlossaryId` and `deeplGlossaryPairs`.
+ * @param fromLocale - Source locale (DatoCMS code), or undefined when unknown.
+ * @param toLocale - Target locale (DatoCMS code).
+ * @returns The resolved glossary id for this translation pair, if any.
  */
 export function resolveGlossaryId(
   params: any,
