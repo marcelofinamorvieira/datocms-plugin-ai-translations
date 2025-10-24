@@ -76,9 +76,17 @@ function getValueAtPath(obj: Record<string, unknown> | unknown[], path: string):
 connect({
   onBoot(ctx) {
     const pluginParams = ctx.plugin.attributes.parameters as ctxParamsType;
-    
-    if (!pluginParams.apiKey) {
-      ctx.alert('Please add an API key in the settings page');
+    const vendor = (pluginParams.vendor as 'openai'|'google'|'anthropic'|'deepl') ?? 'openai';
+    if (!pluginParams.vendor) {
+      ctx.updatePluginParameters({ ...pluginParams, vendor: 'openai' });
+    }
+    const hasOpenAI = !!pluginParams.apiKey && !!pluginParams.gptModel && pluginParams.gptModel !== 'None';
+    const hasGoogle = !!pluginParams.googleApiKey && !!pluginParams.geminiModel;
+    const hasAnthropic = !!(pluginParams as any).anthropicApiKey && !!(pluginParams as any).anthropicModel;
+    const hasDeepL = !!(pluginParams as any).deeplApiKey && !!(pluginParams as any).deeplProxyUrl;
+    const hasCreds = vendor === 'google' ? hasGoogle : vendor === 'anthropic' ? hasAnthropic : vendor === 'deepl' ? hasDeepL : hasOpenAI;
+    if (!hasCreds) {
+      ctx.alert('Please configure credentials for the selected AI vendor in the settings page');
     }
 
     // Set default values for undefined parameters
@@ -267,12 +275,11 @@ connect({
     ctx: RenderItemFormSidebarPanelCtx
   ) {
     const pluginParams = ctx.plugin.attributes.parameters as ctxParamsType;
-    if (
-      !pluginParams.apiKey ||
-      !pluginParams ||
-      !pluginParams.gptModel ||
-      pluginParams.gptModel === 'None'
-    ) {
+    const vendor = pluginParams.vendor ?? 'openai';
+    const hasOpenAI = !!pluginParams.apiKey && !!pluginParams.gptModel && pluginParams.gptModel !== 'None';
+    const hasGoogle = !!pluginParams.googleApiKey && !!pluginParams.geminiModel;
+    const configured = vendor === 'google' ? hasGoogle : hasOpenAI;
+    if (!configured) {
       return render(
         <Canvas ctx={ctx}>
           <Button
@@ -281,7 +288,7 @@ connect({
               ctx.navigateTo(`/configuration/plugins/${ctx.plugin.id}/edit`)
             }
           >
-            Please insert a valid API Key <br /> and select a GPT Model
+            Please configure valid credentials in plugin settings
           </Button>
         </Canvas>
       );
@@ -311,17 +318,16 @@ connect({
   fieldDropdownActions(_field, ctx: FieldDropdownActionsCtx) {
     const pluginParams = ctx.plugin.attributes.parameters as ctxParamsType;
 
-    // If plugin is not configured with an API key or GPT model, show an error
-    if (
-      !pluginParams.apiKey ||
-      !pluginParams ||
-      !pluginParams.gptModel ||
-      pluginParams.gptModel === 'None'
-    ) {
+    // If plugin is not properly configured, show an error action
+    const vendor = pluginParams.vendor ?? 'openai';
+    const hasOpenAI = !!pluginParams.apiKey && !!pluginParams.gptModel && pluginParams.gptModel !== 'None';
+    const hasGoogle = !!pluginParams.googleApiKey && !!pluginParams.geminiModel;
+    const configured = vendor === 'google' ? hasGoogle : hasOpenAI;
+    if (!configured) {
       return [
         {
           id: 'not-configured',
-          label: 'Please insert a valid API Key and select a GPT Model',
+          label: 'Please configure valid AI vendor credentials',
           icon: "language",
         } as DropdownAction,
       ];
@@ -504,15 +510,21 @@ connect({
         }...`,
         dismissAfterTimeout: true,
       });
-      const translatedValue = await TranslateField(
-        fieldValueInSourceLocale,
-        ctx,
-        pluginParams,
-        ctx.locale,
-        locale,
-        fieldType,
-        ctx.environment,
-      );
+      let translatedValue: unknown;
+      try {
+        translatedValue = await TranslateField(
+          fieldValueInSourceLocale,
+          ctx,
+          pluginParams,
+          ctx.locale,
+          locale,
+          fieldType,
+          ctx.environment,
+        );
+      } catch (e) {
+        ctx.alert((e as Error).message || 'Translation failed. Please try another model or check your settings.');
+        return;
+      }
 
       // Persist translated value into the current editing locale
       await ctx.setFieldValue(
@@ -541,15 +553,21 @@ connect({
         });
         for (const loc of locales) {
           if (loc === ctx.locale) continue;
-          const translatedValue = await TranslateField(
-            (fieldValue as Record<string, unknown>)?.[ctx.locale],
-            ctx,
-            pluginParams,
-            loc,
-            ctx.locale,
-            fieldType,
-            ctx.environment,
-          );
+          let translatedValue: unknown;
+          try {
+            translatedValue = await TranslateField(
+              (fieldValue as Record<string, unknown>)?.[ctx.locale],
+              ctx,
+              pluginParams,
+              loc,
+              ctx.locale,
+              fieldType,
+              ctx.environment,
+            );
+          } catch (e) {
+            ctx.alert((e as Error).message || 'Translation failed. Please try another model or check your settings.');
+            continue;
+          }
 
           await ctx.setFieldValue(
             `${ctx.field.attributes.api_key}.${loc}`,
@@ -569,15 +587,21 @@ connect({
         }...`,
       });
 
-      const translatedValue = await TranslateField(
-        (fieldValue as Record<string, unknown>)?.[ctx.locale],
-        ctx,
-        pluginParams,
-        locale,
-        ctx.locale,
-        fieldType,
-        ctx.environment,
-      );
+      let translatedValue: unknown;
+      try {
+        translatedValue = await TranslateField(
+          (fieldValue as Record<string, unknown>)?.[ctx.locale],
+          ctx,
+          pluginParams,
+          locale,
+          ctx.locale,
+          fieldType,
+          ctx.environment,
+        );
+      } catch (e) {
+        ctx.alert((e as Error).message || 'Translation failed. Please try another model or check your settings.');
+        return;
+      }
 
       await ctx.setFieldValue(
         `${ctx.field.attributes.api_key}.${locale}`,

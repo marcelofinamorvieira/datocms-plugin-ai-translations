@@ -9,10 +9,12 @@
  * - Extract and track text values from structured text nodes
  * - Process block nodes separately to maintain rich formatting
  * - Translate content while preserving structure
- * - Handle streaming responses from OpenAI API
+ * - Handle streaming responses from the provider
  */
 
-import type OpenAI from 'openai';
+import type { TranslationProvider } from './types';
+import { translateArray } from './translateArray';
+import { normalizeProviderError } from './ProviderErrors';
 import type { ctxParamsType } from '../../entrypoints/Config/ConfigScreen';
 import { translateFieldValue } from './TranslateField';
 import { createLogger } from '../logging/Logger';
@@ -80,7 +82,7 @@ function ensureArrayLengthsMatch(originalValues: string[], translatedValues: str
  * @param pluginParams - Plugin configuration parameters
  * @param toLocale - Target locale code
  * @param fromLocale - Source locale code
- * @param openai - OpenAI client instance
+ * @param provider - TranslationProvider instance
  * @param apiToken - DatoCMS API token
  * @param environment - Dato environment
  * @param streamCallbacks - Optional callbacks for streaming responses
@@ -92,7 +94,7 @@ export async function translateStructuredTextValue(
   pluginParams: ctxParamsType,
   toLocale: string,
   fromLocale: string,
-  openai: OpenAI,
+  provider: TranslationProvider,
   apiToken: string,
   environment: string,
   streamCallbacks?: StreamCallbacks,
@@ -179,33 +181,25 @@ IMPORTANT: Your response must be a valid JSON array of strings with EXACTLY ${te
 
   try {
     let translatedText = '';
-    const stream = await openai.chat.completions.create({
-      messages: [{ role: 'user', content: prompt }],
-      model: pluginParams.gptModel,
-      stream: true,
-    }, {
-      // Enable aborting the streaming request
-      signal: streamCallbacks?.abortSignal,
-    });
-
-    for await (const chunk of stream) {
+    const shouldStream = !!(streamCallbacks?.onStream || streamCallbacks?.checkCancellation);
+    if (!shouldStream) {
+      translatedText = await provider.completeText(prompt, { abortSignal: streamCallbacks?.abortSignal });
+    } else for await (const delta of provider.streamText(prompt, { abortSignal: streamCallbacks?.abortSignal })) {
       // Cooperative cancellation
       if (streamCallbacks?.checkCancellation?.()) {
         logger.info('Structured text translation cancelled by user');
-        if (streamCallbacks?.onComplete) {
-          streamCallbacks.onComplete();
-        }
-        return fieldValue; // return original content
+        const err: any = new Error('Aborted');
+        err.name = 'AbortError';
+        throw err;
       }
-      const content = chunk.choices[0]?.delta?.content || '';
-      translatedText += content;
+      translatedText += delta;
 
       if (streamCallbacks?.onStream) {
         streamCallbacks.onStream(translatedText);
       }
     }
 
-    if (streamCallbacks?.onComplete) {
+    if (streamCallbacks?.onComplete && shouldStream) {
       streamCallbacks.onComplete();
     }
 
@@ -213,19 +207,15 @@ IMPORTANT: Your response must be a valid JSON array of strings with EXACTLY ${te
     logger.logResponse('Structured text translation response', translatedText);
 
     try {
-      // Clean up response text to handle cases where API might return non-JSON format
-      const cleanedTranslatedText = translatedText.trim()
-        // If response starts with backticks (code block), remove them
-        .replace(/^```json\n/, '')
-        .replace(/^```\n/, '')
-        .replace(/\n```$/, '');
-      
-      const translatedValues = JSON.parse(cleanedTranslatedText);
-
-      if (!Array.isArray(translatedValues)) {
-        logger.warning('Translation response is not an array', translatedValues);
-        return fieldValue;
-      }
+      // Translate inline text values as an array using helper
+      const translatedValues = await translateArray(
+        provider,
+        pluginParams,
+        textValues,
+        fromLocale,
+        toLocale,
+        { isHTML: false, recordContext }
+      );
 
       // Check for length mismatch and attempt recovery
       let processedTranslatedValues = translatedValues;
@@ -265,7 +255,7 @@ IMPORTANT: Your response must be a valid JSON array of strings with EXACTLY ${te
           toLocale,
           fromLocale,
           'rich_text', // Use rich_text instead of block
-          openai,
+          provider,
           '',
           apiToken,
           '',
@@ -304,13 +294,12 @@ IMPORTANT: Your response must be a valid JSON array of strings with EXACTLY ${te
       logger.info('Successfully translated structured text');
       return cleanedReconstructedObject;
     } catch (jsonError) {
-      logger.error('Failed to parse translation response as JSON', jsonError);
-      // More descriptive error information to help with debugging
-      logger.error('Raw response text', { text: translatedText });
+      logger.error('Failed to translate structured text array', jsonError);
       return fieldValue;
     }
   } catch (error) {
-    logger.error('Error during structured text translation', error);
-    return fieldValue;
+    const normalized = normalizeProviderError(error, provider.vendor);
+    logger.error('Error during structured text translation', { message: normalized.message, code: normalized.code, hint: normalized.hint });
+    throw new Error(normalized.message);
   }
 }

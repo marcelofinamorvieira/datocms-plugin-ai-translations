@@ -12,7 +12,8 @@
  * - Format localized SEO content for better user experience
  */
 
-import type OpenAI from 'openai';
+import type { TranslationProvider } from './types';
+import { normalizeProviderError } from './ProviderErrors';
 import locale from 'locale-codes';
 import type { ctxParamsType } from '../../entrypoints/Config/ConfigScreen';
 import { createLogger } from '../logging/Logger';
@@ -40,7 +41,7 @@ type StreamCallbacks = {
  * Translates SEO field values while preserving their object structure
  * 
  * This function extracts the title and description from an SEO object,
- * translates them using OpenAI, and reconstructs the object with the
+ * translates them using the provider, and reconstructs the object with the
  * translated values. It handles streaming updates for UI feedback and
  * uses record context to improve translation quality when available.
  *
@@ -48,7 +49,7 @@ type StreamCallbacks = {
  * @param pluginParams - Plugin configuration parameters
  * @param toLocale - Target locale code for translation
  * @param fromLocale - Source locale code for translation
- * @param openai - OpenAI client instance
+ * @param provider - TranslationProvider instance
  * @param fieldTypePrompt - Additional prompt for SEO format instructions
  * @param streamCallbacks - Optional callbacks for streaming updates
  * @param recordContext - Optional context about the record being translated
@@ -59,9 +60,9 @@ export async function translateSeoFieldValue(
   pluginParams: ctxParamsType,
   toLocale: string,
   fromLocale: string,
-  openai: OpenAI,
+  provider: TranslationProvider,
   fieldTypePrompt: string,
-  streamCallbacks?: StreamCallbacks,
+  _streamCallbacks?: StreamCallbacks,
   recordContext = ''
 ): Promise<SeoObject> {
   const logger = createLogger(pluginParams, 'translateSeoFieldValue');
@@ -99,82 +100,17 @@ export async function translateSeoFieldValue(
     // Log prompt only when debugging is enabled
     logger.logPrompt('SEO translation prompt', formattedPrompt);
 
-    let translatedText = '';
-    logger.info('Initiating OpenAI stream for translation');
-    const stream = await openai.chat.completions.create({
-      messages: [{ role: 'user', content: formattedPrompt }],
-      model: pluginParams.gptModel,
-      stream: true,
-    }, {
-      // Allow cancellation of in-flight requests from UI
-      signal: streamCallbacks?.abortSignal,
-    });
-
-    for await (const chunk of stream) {
-      // Support cooperative cancellation during streaming
-      if (streamCallbacks?.checkCancellation?.()) {
-        logger.info('SEO translation cancelled by user');
-        if (streamCallbacks?.onComplete) {
-          streamCallbacks.onComplete();
-        }
-        return seoObjectToTranslate; // Return original values if cancelled
-      }
-      const content = chunk.choices[0]?.delta?.content || '';
-      translatedText += content;
-      if (streamCallbacks?.onStream) {
-        streamCallbacks.onStream(translatedText);
-      }
-    }
-
-    if (streamCallbacks?.onComplete) {
-      streamCallbacks.onComplete();
-    }
-
-    logger.info(`Received translated text with length ${translatedText.length}`);
-
-    // Clean up the response to ensure it's valid JSON
-    let sanitizedText = translatedText.trim();
-    
-    // Remove potential markdown code block markers
-    sanitizedText = sanitizedText.replace(/^```(json)?\n?/i, '').replace(/```$/i, '');
-    
-    // Handle potential unintended characters at the beginning
-    if (!sanitizedText.startsWith('{')) {
-      const jsonStart = sanitizedText.indexOf('{');
-      if (jsonStart !== -1) {
-        sanitizedText = sanitizedText.substring(jsonStart);
-      }
-    }
-    
-    // Handle potential unintended characters at the end
-    const lastBrace = sanitizedText.lastIndexOf('}');
-    if (lastBrace !== -1 && lastBrace < sanitizedText.length - 1) {
-      sanitizedText = sanitizedText.substring(0, lastBrace + 1);
-    }
-    
-    logger.info(`Sanitized JSON: ${sanitizedText}`);
-
-    // Parse the returned object with error handling
-    let returnedSeoObject: SeoObject = { title: '', description: '' };
-    try {
-      returnedSeoObject = JSON.parse(sanitizedText || '{}');
-      logger.info('Successfully parsed translated SEO object');
-    } catch (parseError) {
-      logger.error(`JSON parse error: ${parseError instanceof Error ? parseError.message : String(parseError)}`);
-      logger.error(`Attempted to parse: ${sanitizedText}`);
-      
-      // Fallback: extract title and description with regex
-      logger.info('Attempting fallback extraction with regex');
-      const titleMatch = /"title"\s*:\s*"([^"]+)"/i.exec(sanitizedText);
-      const descriptionMatch = /"description"\s*:\s*"([^"]+)"/i.exec(sanitizedText);
-      
-      returnedSeoObject = {
-        title: titleMatch ? titleMatch[1] : seoObject.title,
-        description: descriptionMatch ? descriptionMatch[1] : seoObject.description
-      };
-      
-      logger.info(`Fallback extraction result: ${JSON.stringify(returnedSeoObject)}`);
-    }
+    // Translate via array helper for parity across vendors
+    const { translateArray } = await import('./translateArray');
+    const [titleT, descT] = await translateArray(
+      provider,
+      pluginParams,
+      [seoObjectToTranslate.title, seoObjectToTranslate.description],
+      fromLocale,
+      toLocale,
+      { isHTML: false, recordContext }
+    );
+    const returnedSeoObject: SeoObject = { title: titleT, description: descT };
 
     // Update the original seoObject
     // Enforce character limits for SEO content
@@ -194,7 +130,8 @@ export async function translateSeoFieldValue(
     logger.info('SEO translation completed successfully');
     return seoObject;
   } catch (error) {
-    logger.error('SEO translation error:', error instanceof Error ? error.message : String(error));
-    throw error;
+    const normalized = normalizeProviderError(error, provider.vendor);
+    logger.error('SEO translation error', { message: normalized.message, code: normalized.code, hint: normalized.hint });
+    throw new Error(normalized.message);
   }
 }

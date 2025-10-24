@@ -28,6 +28,7 @@ const LOG_LEVELS = {
 export class Logger {
   private enabled: boolean;
   private source: string;
+  private secrets: string[] = [];
 
   /**
    * Creates a new logger instance.
@@ -38,6 +39,45 @@ export class Logger {
   constructor(pluginParams: ctxParamsType, source: string) {
     this.enabled = pluginParams.enableDebugging ?? false;
     this.source = source;
+    // Collect known secrets for redaction
+    const candidates = [
+      pluginParams.apiKey,
+      (pluginParams as any).googleApiKey,
+    ].filter(Boolean) as string[];
+    // Only keep reasonably long secrets to avoid redacting trivial words
+    this.secrets = candidates.filter((s) => typeof s === 'string' && s.length >= 8);
+  }
+
+  private redactString(s: string): string {
+    let out = s;
+    for (const secret of this.secrets) {
+      if (!secret) continue;
+      const safe = secret.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      out = out.replace(new RegExp(safe, 'g'), '[REDACTED]');
+    }
+    return out;
+  }
+
+  private sanitize(data: LoggableData, depth = 0): LoggableData {
+    if (typeof data === 'string') return this.redactString(data);
+    if (data == null) return data;
+    if (depth > 3) return '[Object]';
+    if (Array.isArray(data)) return data.map((v) => this.sanitize(v, depth + 1));
+    if (typeof data === 'object') {
+      const out: Record<string, unknown> = {};
+      for (const [k, v] of Object.entries(data as Record<string, unknown>)) {
+        const keyLower = k.toLowerCase();
+        if (keyLower.includes('apikey') || keyLower.includes('api_key') || keyLower.includes('authorization') || keyLower.includes('token') || keyLower.includes('secret')) {
+          out[k] = typeof v === 'string' && v.length > 4 ? `${(v as string).slice(0, 3)}…[REDACTED]` : '[REDACTED]';
+        } else if (typeof v === 'string') {
+          out[k] = this.redactString(v);
+        } else {
+          out[k] = this.sanitize(v as LoggableData, depth + 1);
+        }
+      }
+      return out;
+    }
+    return data;
   }
 
   /**
@@ -63,7 +103,7 @@ export class Logger {
     );
     
     if (data !== undefined) {
-      console.log(data);
+      console.log(this.sanitize(data));
     }
     
     console.groupEnd();
@@ -102,10 +142,12 @@ export class Logger {
    */
   error(message: string, error?: LoggableData): void {
     // Errors are always logged, even if debugging is disabled
-    console.error(`${this.source}: ${message}`, error);
+    const sanitized = this.sanitize(error);
+    const redactedMsg = this.redactString(message);
+    console.error(`${this.source}: ${redactedMsg}`, sanitized);
     // Also log in our format if debugging is enabled
     if (this.enabled) {
-      this.log('ERROR', message, error);
+      this.log('ERROR', redactedMsg, sanitized);
     }
   }
 }

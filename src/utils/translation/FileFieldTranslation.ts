@@ -12,7 +12,8 @@
  * - Stream translation progress back to the UI
  */
 
-import type OpenAI from 'openai';
+import type { TranslationProvider } from './types';
+import { normalizeProviderError } from './ProviderErrors';
 import type { ctxParamsType } from '../../entrypoints/Config/ConfigScreen';
 import { createLogger } from '../logging/Logger';
 
@@ -38,7 +39,7 @@ type StreamCallbacks = {
  * @param pluginParams - Plugin configuration parameters
  * @param toLocale - Target locale code for translation
  * @param fromLocale - Source locale code for translation
- * @param openai - Instance of OpenAI client for translation
+ * @param provider - TranslationProvider instance used for translation
  * @param streamCallbacks - Optional callbacks for streaming progress updates
  * @param recordContext - Optional context about the record to improve translation quality
  * @returns Updated file field data with translated metadata
@@ -48,8 +49,8 @@ export async function translateFileFieldValue(
   pluginParams: ctxParamsType,
   toLocale: string,
   fromLocale: string,
-  openai: OpenAI,
-  streamCallbacks?: StreamCallbacks,
+  provider: TranslationProvider,
+  _streamCallbacks?: StreamCallbacks,
   recordContext = ''
 ): Promise<unknown> {
   // Create logger for this module
@@ -78,8 +79,8 @@ export async function translateFileFieldValue(
           pluginParams,
           toLocale,
           fromLocale,
-          openai,
-          streamCallbacks,
+          provider,
+          _streamCallbacks,
           recordContext
         );
       })
@@ -95,8 +96,8 @@ export async function translateFileFieldValue(
     pluginParams,
     toLocale,
     fromLocale,
-    openai,
-    streamCallbacks,
+    provider,
+    _streamCallbacks,
     recordContext
   );
 }
@@ -105,7 +106,7 @@ export async function translateFileFieldValue(
  * Translates metadata for a single file object
  * 
  * This function extracts text-based metadata fields from a file object,
- * translates them using OpenAI, and then merges the translated metadata
+ * translates them using the provider, and then merges the translated metadata
  * back into the original file object, preserving all non-metadata properties.
  * It only translates string-type metadata values, leaving other types untouched.
  * 
@@ -113,7 +114,7 @@ export async function translateFileFieldValue(
  * @param pluginParams - Plugin configuration parameters
  * @param toLocale - Target locale code for translation
  * @param fromLocale - Source locale code for translation
- * @param openai - Instance of OpenAI client for translation
+ * @param provider - TranslationProvider instance used for translation
  * @param streamCallbacks - Optional callbacks for streaming progress updates
  * @param recordContext - Optional context about the record to improve translation quality
  * @returns Updated file object with translated metadata
@@ -123,8 +124,8 @@ async function translateSingleFileMetadata(
   pluginParams: ctxParamsType,
   toLocale: string,
   fromLocale: string,
-  openai: OpenAI,
-  streamCallbacks?: StreamCallbacks,
+  provider: TranslationProvider,
+  _streamCallbacks?: StreamCallbacks,
   recordContext = ''
 ): Promise<unknown> {
   // Create logger for this function
@@ -161,56 +162,14 @@ async function translateSingleFileMetadata(
 
   logger.info('Translating file metadata', metadataToTranslate);
 
-  // Format locale codes for better prompt clarity
-  const localeMapper = new Intl.DisplayNames([fromLocale], { type: 'language' });
-  const fromLocaleName = localeMapper.of(fromLocale) || fromLocale;
-  const toLocaleName = localeMapper.of(toLocale) || toLocale;
-
-  // Use template-based prompt system for consistency
-  const prompt = (pluginParams.prompt || '')
-    .replace('{fieldValue}', JSON.stringify(metadataToTranslate))
-    .replace('{fromLocale}', fromLocaleName)
-    .replace('{toLocale}', toLocaleName)
-    .replace('{recordContext}', recordContext || 'Record context: No additional context available.');
-
-  // Log the prompt
-  logger.logPrompt('File metadata translation prompt', prompt);
+  // No display names needed for array helper path
 
   try {
-    let translatedText = '';
-    const stream = await openai.chat.completions.create({
-      messages: [{ role: 'user', content: prompt }],
-      model: pluginParams.gptModel,
-      stream: true,
-    }, {
-      signal: streamCallbacks?.abortSignal as AbortSignal | undefined,
-    });
-
-    for await (const chunk of stream) {
-      // Cooperative cancellation
-      if ((streamCallbacks as { checkCancellation?: () => boolean } | undefined)?.checkCancellation?.()) {
-        logger.info('File metadata translation cancelled by user');
-        if (streamCallbacks?.onComplete) {
-          streamCallbacks.onComplete();
-        }
-        return fileValue;
-      }
-      const content = chunk.choices[0]?.delta?.content || '';
-      translatedText += content;
-      if (streamCallbacks?.onStream) {
-        streamCallbacks.onStream(translatedText);
-      }
-    }
-
-    if (streamCallbacks?.onComplete) {
-      streamCallbacks.onComplete();
-    }
-
-    // Log the response
-    logger.logResponse('File metadata translation response', translatedText);
-
-    // Parse the translated metadata
-    const translatedMetadata = JSON.parse(translatedText || '{}');
+    const keys = Object.keys(metadataToTranslate);
+    const values = keys.map((k) => String(metadataToTranslate[k] ?? ''));
+    const { translateArray } = await import('./translateArray');
+    const translatedValues = await translateArray(provider, pluginParams, values, fromLocale, toLocale, { isHTML: false, recordContext });
+    const translatedMetadata = keys.reduce((acc, key, idx) => { acc[key] = translatedValues[idx]; return acc; }, {} as Record<string, unknown>);
 
     // Update the original file object with translated metadata
     return {
@@ -221,7 +180,8 @@ async function translateSingleFileMetadata(
       },
     };
   } catch (error) {
-    logger.error('File metadata translation error', error);
-    throw error;
+    const normalized = normalizeProviderError(error, provider.vendor);
+    logger.error('File metadata translation error', { message: normalized.message, code: normalized.code, hint: normalized.hint });
+    throw new Error(normalized.message);
   }
 }

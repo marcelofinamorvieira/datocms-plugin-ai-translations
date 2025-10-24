@@ -12,7 +12,8 @@
  * - Supporting contextual information to improve translation quality
  */
 
-import type OpenAI from 'openai';
+import type { TranslationProvider } from './types';
+import { normalizeProviderError } from './ProviderErrors';
 import type { ctxParamsType } from '../../entrypoints/Config/ConfigScreen';
 import { createLogger } from '../logging/Logger';
 
@@ -48,8 +49,8 @@ export async function translateDefaultFieldValue(
   pluginParams: ctxParamsType,
   toLocale: string,
   fromLocale: string,
-  openai: OpenAI,
-  streamCallbacks?: StreamCallbacks,
+  provider: TranslationProvider,
+  _streamCallbacks?: StreamCallbacks,
   recordContext = ''
 ): Promise<unknown> {
   // If nothing to translate, return as is
@@ -59,89 +60,20 @@ export async function translateDefaultFieldValue(
 
   // Format locale names for better prompt clarity, handling hyphenated locales
   // For hyphenated locales like "pt-br", use just the language part for displaying
-  const fromLanguageCode = fromLocale.split('-')[0];
-  const toLanguageCode = toLocale.split('-')[0];
-
-  let fromLocaleName = fromLocale;
-  let toLocaleName = toLocale;
-
-  try {
-    // Use English as the display language to get consistent names
-    const localeMapper = new Intl.DisplayNames(['en'], { type: 'language' });
-    const fromLanguageName = localeMapper.of(fromLanguageCode);
-    const toLanguageName = localeMapper.of(toLanguageCode);
-
-    // Format the locale display names
-    if (fromLocale.includes('-')) {
-      const fromRegion = fromLocale.split('-')[1];
-      fromLocaleName = `${fromLanguageName} (${fromRegion})`;
-    } else {
-      fromLocaleName = fromLanguageName || fromLocale;
-    }
-
-    if (toLocale.includes('-')) {
-      const toRegion = toLocale.split('-')[1];
-      toLocaleName = `${toLanguageName} (${toRegion})`;
-    } else {
-      toLocaleName = toLanguageName || toLocale;
-    }
-  } catch (error) {
-    // Fallback in case the locale codes aren't recognized by Intl
-    console.warn(`Error formatting locale names for ${fromLocale}/${toLocale}:`, error);
-  }
+  // No display‑name formatting required for array helper path
 
   // Create logger for this module
   const logger = createLogger(pluginParams, 'DefaultTranslation');
 
-  // Construct prompt using the template system 
-  const prompt = (pluginParams.prompt || '')
-    .replace('{fieldValue}', String(fieldValue))
-    .replace('{fromLocale}', fromLocaleName)
-    .replace('{toLocale}', toLocaleName)
-    .replace('{recordContext}', recordContext || 'Record context: No additional context available.');
-  
-  // Log the prompt being sent to OpenAI
-  logger.logPrompt('Translating default field value', prompt);
-
   try {
-    let translatedText = '';
-    const stream = await openai.chat.completions.create({
-      messages: [{ role: 'user', content: prompt }],
-      model: pluginParams.gptModel,
-      stream: true,
-    }, {
-      signal: streamCallbacks?.abortSignal
-    });
-
-    for await (const chunk of stream) {
-      // Check for cancellation during streaming
-      if (streamCallbacks?.checkCancellation?.()) {
-        logger.info('Translation cancelled by user');
-        if (streamCallbacks?.onComplete) {
-          streamCallbacks.onComplete();
-        }
-        return translatedText || fieldValue; // Return whatever we have so far or the original
-      }
-
-      const content = chunk.choices[0]?.delta?.content || '';
-      translatedText += content;
-
-      if (streamCallbacks?.onStream) {
-        streamCallbacks.onStream(translatedText);
-      }
-    }
-
-    if (streamCallbacks?.onComplete) {
-      streamCallbacks.onComplete();
-    }
-
-    // Log the response received from OpenAI
-    logger.logResponse('Received translation result', translatedText);
-
-    return translatedText;
+    // Translate as a single-element array to align with DeepL + chat vendors via helper
+    const { translateArray } = await import('./translateArray');
+    const [translated] = await translateArray(provider, pluginParams, [String(fieldValue)], fromLocale, toLocale, { isHTML: false, recordContext });
+    return translated;
   } catch (error) {
-    logger.error('Translation error', error);
-    throw error;
+    const normalized = normalizeProviderError(error, provider.vendor);
+    logger.error(`Translation error: ${normalized.message}`, { code: normalized.code, hint: normalized.hint });
+    throw new Error(normalized.message);
   }
 }
 

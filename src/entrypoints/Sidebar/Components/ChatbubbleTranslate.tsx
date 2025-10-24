@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { AiOutlineOpenAI } from 'react-icons/ai';
 import { BsCheckCircleFill } from 'react-icons/bs';
@@ -44,7 +44,19 @@ type Props = {
 };
 
 export function ChatBubble({ bubble, theme }: Props) {
-  const [isHovered, setIsHovered] = useState(false);
+  // Hover behavior removed in full-response mode
+  const [elapsedSec, setElapsedSec] = useState(0);
+
+  useEffect(() => {
+    let t: ReturnType<typeof setInterval> | null = null;
+    if (bubble.status === 'pending') {
+      setElapsedSec(0);
+      t = setInterval(() => setElapsedSec((s) => s + 1), 1000);
+    }
+    return () => {
+      if (t) clearInterval(t);
+    };
+  }, [bubble.status]);
 
   // Theme-based styles that can't be in CSS
   const backgroundColor = useMemo(() => {
@@ -69,12 +81,7 @@ export function ChatBubble({ bubble, theme }: Props) {
     return theme.darkColor ? `${theme.darkColor}99` : 'rgba(32, 0, 56, 0.6)';
   }, [theme]);
 
-  const truncatedContent = useMemo(() => {
-    if (!bubble.streamingContent) return '';
-    const content = bubble.streamingContent.trim();
-    if (content.length <= 100 || isHovered) return content;
-    return `${content.slice(-100)}...`;
-  }, [bubble.streamingContent, isHovered]);
+  // Streaming preview disabled for full-response mode
 
   // Variants for framer-motion to animate bubble appearance and transitions
   const bubbleVariants = {
@@ -118,21 +125,10 @@ export function ChatBubble({ bubble, theme }: Props) {
     },
   };
 
-  const streamingTextVariants = {
-    initial: { opacity: 0 },
-    animate: {
-      opacity: 1,
-      transition: {
-        opacity: { duration: 0.3 },
-      },
-    },
-    exit: {
-      opacity: 0,
-      transition: {
-        opacity: { duration: 0.2 },
-      },
-    },
-  };
+  // Removed streaming text animations in full-response mode
+
+  // Show hint only for long-running fields
+  const showPendingHint = bubble.status === 'pending' && elapsedSec >= 15;
 
   // Conditional icon animation:
   // - If status is 'pending', rotate continuously.
@@ -204,48 +200,24 @@ export function ChatBubble({ bubble, theme }: Props) {
         </motion.div>
 
         <div className={styles.streamingContainer}>
-          {bubble.status === 'pending' && bubble.streamingContent && bubble.streamingContent.trim().length > 250 && (
-            <div
-              className={styles.hierarchyLine}
-              style={{ backgroundColor: `${tooltipTextColor}20` }}
-            />
-          )}
-
+          {/* subtle connector to the bubble above for better visual grouping */}
           <AnimatePresence mode="wait">
-            {bubble.status === 'pending' && bubble.streamingContent && bubble.streamingContent.trim().length > 250 && (
+            {showPendingHint && (
               <motion.div
                 variants={tooltipVariants}
                 initial="initial"
                 animate="animate"
                 exit="exit"
-                onHoverStart={() => setIsHovered(true)}
-                onHoverEnd={() => setIsHovered(false)}
-                className={styles.streamingBubble}
+                className={styles.pendingHint}
                 style={{
                   backgroundColor: tooltipBackgroundColor,
                   border: `1px solid ${
-                    theme.semiTransparentAccentColor || 'rgba(114, 0, 196, 0.1)'
+                    theme.semiTransparentAccentColor || 'rgba(114, 0, 196, 0.12)'
                   }`,
+                  color: tooltipTextColor,
                 }}
               >
-                <motion.div
-                  variants={streamingTextVariants}
-                  initial="initial"
-                  animate="animate"
-                  exit="exit"
-                  className={styles.streamingContent}
-                  style={{ color: tooltipTextColor }}
-                >
-                  {truncatedContent}
-                </motion.div>
-                {!isHovered && bubble.streamingContent.length > 100 && (
-                  <div
-                    className={styles.fadeGradient}
-                    style={{
-                      background: `linear-gradient(transparent, ${tooltipBackgroundColor})`,
-                    }}
-                  />
-                )}
+                <span className={styles.pendingPulseText}>Translating a large field: not stuck</span>
               </motion.div>
             )}
           </AnimatePresence>

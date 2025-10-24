@@ -1,6 +1,6 @@
 # AI Translations
 
-This plugin integrates with the OpenAI API and provides on-demand AI-powered translations for your fields. You can also translate entire records or perform bulk translations across multiple records and models.
+This plugin integrates with AI providers and provides on-demand AI-powered translations for your fields. You can also translate entire records or perform bulk translations across multiple records and models.
 
 ![47659](https://github.com/user-attachments/assets/2aae06c5-d2fb-404d-ae76-08b5ebd55759)
 
@@ -14,23 +14,32 @@ See the [CHANGELOG.md](./CHANGELOG.md) file for details about all the latest fea
 
 On the plugin's Settings screen:
 
-1. **OpenAI API Key**: Paste a valid OpenAI API key. The plugin uses this key for translation requests.
-2. **GPT Model**: After entering your API key, the plugin fetches your
-   account's available OpenAI models and shows the ones relevant for
-   text translation via Chat Completions. A recommended default is highlighted.
-   - Default: gpt‑5‑mini (best balance of quality/cost/latency)
-   - High‑stakes short copy: gpt‑5 (highest fidelity)
-   - Large or budget batches: gpt‑5‑nano (lowest cost/latency)
-   - If GPT‑5 family isn’t on your account, the UI recommends the best 4.x alternative (e.g., gpt‑4.1‑mini)
-3. **Translatable Field Types**: Pick which field editor types (single_line, markdown, structured_text, etc.) can be translated.
-4. **Translate Whole Record**: Decide if you want the sidebar feature that allows users to translate every localized field in the record at once.
-5. **Translate Bulk Records**: Decide if you want the bulk translation feature that allows users to translate multiple records at once on the table view.
-6. **AI Bulk Translations Page**: Translate whole models at once.
-7. **Prompt Template**: Customize how translations are requested. The plugin uses placeholders like `{fieldValue}`, `{fromLocale}`, `{toLocale}`, and `{recordContext}`.
+1. **AI Vendor**: Choose your provider — OpenAI (ChatGPT), Google (Gemini), or Anthropic (Claude).
+2. If you chose OpenAI:
+   - **OpenAI API Key**: Paste a valid OpenAI key.
+   - **GPT Model**: After entering your key, the plugin lists relevant chat models and highlights a recommended default.
+     - Default: gpt‑4.1‑mini (fastest and broadly available)
+     - High‑stakes short copy: gpt‑4.1
+     - Large or budget batches: gpt‑4o‑mini
+3. If you chose Google (Gemini):
+   - **Google API Key**: Paste a valid key from a GCP project with the Generative Language API enabled.
+   - **Gemini Model**: Recommended `gemini-2.5-flash` (fast/cost‑effective default). For the highest fidelity, use `gemini-2.5-pro`. For very large or budget batches, consider `gemini-2.5-flash-lite`.
+4. **Translatable Field Types**: Pick which field editor types (single_line, markdown, structured_text, etc.) can be translated.
+5. **Translate Whole Record**: Enable the sidebar that translates every localized field in a record.
+6. **Translate Bulk Records**: Enable bulk translations from table view or via the dedicated page.
+7. **AI Bulk Translations Page**: Translate whole models at once.
+8. **Prompt Template**: Customize how translations are requested. Use `{fieldValue}`, `{fromLocale}`, `{toLocale}`, and `{recordContext}`.
 
-_**Models**_: The list is dynamic and based on your OpenAI account. The plugin
-filters out embeddings, audio/whisper/tts, moderation, image, and realtime models
-and prioritizes general-purpose GPT chat models commonly used for translation.
+### Key Restrictions and Security
+- Keys are stored in plugin settings and used client‑side. Do not share your workspace publicly.
+- Prefer restricting keys:
+  - OpenAI: regular secret key; rotate periodically.
+  - Google: restrict by HTTP referrer and enable only the Generative Language API.
+- The plugin redacts API keys from debug logs automatically.
+
+_**Models**_
+- OpenAI: the list is dynamic for your account; the plugin filters out embeddings, audio/whisper/tts, moderation, image, and realtime models, prioritizing general-purpose chat models used for translation.
+- Google: provides a fixed list in settings (`gemini-1.5-flash` and `gemini-1.5-pro`).
 
 Save your changes. The plugin is now ready.
 
@@ -105,8 +114,159 @@ You can customize the translation prompt template in the plugin settings:
 
 ## Troubleshooting
 
-- **Invalid API Key**: Ensure your OpenAI API key is correct and has sufficient usage limits.
+- **Invalid API Key**: Ensure your key matches the selected vendor and has access.
+- **Rate Limit/Quota**: Reduce concurrency/batch size, switch to a lighter model, or increase your vendor quota.
+- **Model Not Found**: Verify the exact model id exists for your account/region and is spelled correctly.
 - **Localization**: Make sure your project has at least two locales, otherwise translation actions won't appear.
+
+## DeepL Requires a Proxy (Why and How)
+
+DeepL’s API does not support browser‑origin requests (no CORS). If you call DeepL directly from the plugin (which runs in the browser), the preflight request fails and you’ll see network/CORS errors. To use DeepL in this plugin, you must route requests through a small server you control (a “proxy”).
+
+What the proxy must do
+- Accept a POST with JSON body that matches DeepL’s `/v2/translate` input. The plugin sends bodies like:
+  - `{ "text": ["Hello"], "target_lang": "DE", ... }`
+- Add CORS headers to the response (at minimum `Access-Control-Allow-Origin: *` for testing; you can restrict later).
+- Forward the request to DeepL’s API with the Authorization header added server‑side:
+  - `Authorization: DeepL-Auth-Key <YOUR_KEY>`
+- Choose the proper upstream host:
+  - Free keys (end with `:fx`) → `https://api-free.deepl.com`
+  - Pro keys → `https://api.deepl.com`
+
+Plugin settings to use with a proxy
+- In Settings → DeepL, set “Proxy URL” to the base of your function (examples below) — the plugin will call `POST <proxy>/v2/translate`.
+- If your key ends with `:fx`, also enable “Use DeepL Free endpoint (api-free.deepl.com)” so validation and error messages match your plan.
+- Use the “Test proxy” button: we send a tiny "Hello world" test, and show inline success/error feedback.
+
+Security notes
+- Never expose the DeepL key in the browser. Keep it in your serverless function/env.
+- For production, restrict CORS to `https://admin.datocms.com` and your own preview domains instead of `*`.
+- Do not log request bodies or headers; avoid leaving keys in logs.
+
+### Option A: Cloudflare Workers
+
+Environment vars
+- `DEEPL_AUTH_KEY` — your DeepL key
+- `DEEPL_BASE_URL` — `https://api-free.deepl.com` (Free) or `https://api.deepl.com` (Pro)
+
+Worker (wrangler.toml configured; minimal example)
+```
+export default {
+  async fetch(req, env) {
+    const cors = {
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Headers': '*',
+    };
+    if (req.method === 'OPTIONS') return new Response(null, { headers: cors });
+
+    const upstream = new URL('/v2/translate', env.DEEPL_BASE_URL || 'https://api.deepl.com');
+    const body = await req.text(); // passthrough JSON body
+
+    const resp = await fetch(upstream, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `DeepL-Auth-Key ${env.DEEPL_AUTH_KEY}`,
+      },
+      body,
+    });
+
+    const text = await resp.text();
+    return new Response(text, { status: resp.status, headers: { ...cors, 'Content-Type': 'application/json' } });
+  }
+}
+```
+
+Deploy
+- `wrangler deploy`
+- Set `DEEPL_AUTH_KEY` and `DEEPL_BASE_URL` in your Worker’s environment.
+- Copy the Worker URL (e.g., `https://your-worker.yourname.workers.dev`) into the plugin’s “Proxy URL”.
+
+### Option B: Vercel Serverless Function (Next.js API Route)
+
+Environment vars (Project Settings → Environment Variables):
+- `DEEPL_AUTH_KEY` — your key
+- `DEEPL_BASE_URL` — `https://api-free.deepl.com` or `https://api.deepl.com`
+
+Create `pages/api/deepl.ts` (or `app/api/deepl/route.ts` for App Router):
+```
+export default async function handler(req, res) {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Headers', '*');
+  if (req.method === 'OPTIONS') return res.status(204).end();
+
+  const upstream = `${process.env.DEEPL_BASE_URL || 'https://api.deepl.com'}/v2/translate`;
+  const r = await fetch(upstream, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `DeepL-Auth-Key ${process.env.DEEPL_AUTH_KEY}`,
+    },
+    body: JSON.stringify(req.body ?? {}),
+  });
+  const text = await r.text();
+  res.status(r.status).setHeader('Content-Type', 'application/json').send(text);
+}
+```
+
+Deploy
+- `vercel deploy` (or push to GitHub with Vercel connected).
+- Set env vars, redeploy, then use `https://your-app.vercel.app/api/deepl` as the “Proxy URL”.
+
+### Option C: Netlify Functions
+
+Environment vars (Netlify dashboard → Site settings → Environment):
+- `DEEPL_AUTH_KEY`, `DEEPL_BASE_URL`
+
+Create `netlify/functions/deepl-proxy.ts`:
+```
+export const handler = async (event) => {
+  if (event.httpMethod === 'OPTIONS') {
+    return { statusCode: 204, headers: { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': '*' } };
+  }
+  const upstream = `${process.env.DEEPL_BASE_URL || 'https://api.deepl.com'}/v2/translate`;
+  const r = await fetch(upstream, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `DeepL-Auth-Key ${process.env.DEEPL_AUTH_KEY}`,
+    },
+    body: event.body || '{}',
+  });
+  const text = await r.text();
+  return {
+    statusCode: r.status,
+    headers: { 'Access-Control-Allow-Origin': '*', 'Content-Type': 'application/json' },
+    body: text,
+  };
+};
+```
+
+Deploy
+- `netlify deploy` (or via the Netlify app/CLI). Use `/.netlify/functions/deepl-proxy` as your “Proxy URL”.
+
+### Testing and common errors
+
+- Use the “Test proxy” button in plugin settings to verify connectivity.
+- Wrong endpoint for key (403 / “Wrong endpoint”):
+  - Free key (`…:fx`) must target `api-free.deepl.com`. Pro keys must target `api.deepl.com`.
+  - Fix by setting `DEEPL_BASE_URL` accordingly (and/or toggle “Use DeepL Free endpoint” in the plugin).
+- CORS errors: ensure your proxy responds to OPTIONS and includes `Access-Control-Allow-Origin`.
+- 414/URI too long: means you’re not POSTing a body through your proxy. The examples above use POST and won’t hit this.
+- 429/Rate limit: lower concurrency or try smaller batches; upgrade plan if needed.
+
+That’s it — once your proxy passes the test, DeepL translations (including large Structured Text fields) will work end‑to‑end.
+
+See also
+- CLI step‑by‑steps for deploying a proxy (Cloudflare, Vercel, Netlify): docs/DeepL-Proxy-CLI.md
+
+## Migration Notes
+
+- Existing installations continue to work with OpenAI by default; your current `apiKey` and `gptModel` remain valid.
+- To use Google (Gemini):
+  1. In Google Cloud, enable the Generative Language API for your project.
+  2. Create an API key and restrict it by HTTP referrer if possible.
+  3. In the plugin settings, switch vendor to Google (Gemini), paste the key, and select a Gemini model.
 
 ## License
 

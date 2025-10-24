@@ -8,7 +8,8 @@ import {
   translateAndUpdateRecords,
   type ProgressUpdate
 } from '../utils/translation/ItemsDropdownUtils';
-import { buildDatoCMSClient, createOpenAIClient } from '../utils/clients';
+import { buildDatoCMSClient } from '../utils/clients';
+import { getProvider } from '../utils/translation/ProviderFactory';
 import type { ctxParamsType } from '../entrypoints/Config/ConfigScreen';
 // findExactLocaleKey no longer needed here
 import './TranslationProgressModal.css';
@@ -39,6 +40,7 @@ export default function TranslationProgressModal({ ctx, parameters }: Translatio
   const [isCancelled, setIsCancelled] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
+  const updatesRef = useRef<HTMLDivElement | null>(null);
   
   // Use a ref to track if we've started the translation process
   const hasStartedTranslation = useRef(false);
@@ -70,7 +72,7 @@ export default function TranslationProgressModal({ ctx, parameters }: Translatio
       try {
         const client = buildDatoCMSClient(accessToken, ctx.environment);
         const records = await fetchRecordsWithPagination(client, itemIds);
-        const openai = createOpenAIClient(pluginParams.apiKey);
+        const provider = getProvider(pluginParams);
 
         // Cache field dictionaries per item type
         const cache = new Map<string, Record<string, { editor: string; id: string; isLocalized: boolean }>>();
@@ -89,7 +91,7 @@ export default function TranslationProgressModal({ ctx, parameters }: Translatio
         await translateAndUpdateRecords(
           records,
           client,
-          openai,
+          provider,
           fromLocale,
           toLocale,
           getFieldTypeDictionary,
@@ -168,6 +170,17 @@ export default function TranslationProgressModal({ ctx, parameters }: Translatio
     }
   }, [completedCount, totalRecords]);
   
+  // Keep the viewport anchored to the top so newest entries (rendered first)
+  // are always visible without manual scrolling.
+  useEffect(() => {
+    const el = updatesRef.current;
+    if (!el) return;
+    // If user hasn't scrolled away from the top significantly, pin to top
+    if (el.scrollTop <= 8) {
+      el.scrollTop = 0;
+    }
+  }, [progress.length]);
+  
   const handleClose = () => {
     ctx.resolve({ completed: isCompleted, progress });
   };
@@ -182,8 +195,7 @@ export default function TranslationProgressModal({ ctx, parameters }: Translatio
   return (
     <Canvas ctx={ctx}>
       <div className="TranslationProgressModal">
-        <div className="TranslationProgressModal__header">
-          <h2>Translating Records</h2>
+        <div className="TranslationProgressModal__intro">
           <div className="TranslationProgressModal__languages">
             <p>
               Translating from <strong>{formatLocaleDisplay(fromLocale)}</strong> to <strong>{formatLocaleDisplay(toLocale)}</strong>
@@ -196,26 +208,27 @@ export default function TranslationProgressModal({ ctx, parameters }: Translatio
               {processedRecords.filter(update => update.status === 'error').length} failed
             </p>
           </div>
+          {/* Progress bar */}
+          <div className="TranslationProgressModal__progress-bar">
+            <div 
+              className="TranslationProgressModal__progress-bar-fill"
+              style={{width: `${percentComplete}%`}}
+            />
+          </div>
         </div>
-        
-        {/* Progress bar */}
-        <div className="TranslationProgressModal__progress-bar">
-          <div 
-            className="TranslationProgressModal__progress-bar-fill"
-            style={{width: `${percentComplete}%`}}
-          />
-        </div>
-        
+
         {/* Progress list */}
-        <div className="TranslationProgressModal__updates">
+        <div className="TranslationProgressModal__updates" ref={updatesRef} aria-live="polite">
           {progress.length > 0 ? (
-            <ul className="TranslationProgressModal__update-list">
+            <ul className="TranslationProgressModal__update-list" role="list">
               {progress
                 .slice()
-                .sort((a, b) => a.recordIndex - b.recordIndex)
+                // Newest updates first so the most recent work is visible
+                .sort((a, b) => b.recordIndex - a.recordIndex)
                 .map((update) => (
                 <li 
-                  key={`${update.recordIndex}-${update.message}`}
+                  key={update.recordId}
+                  role="listitem"
                   className={`TranslationProgressModal__update-item TranslationProgressModal__update-item--${update.status}`}
                 >
                   <span className="TranslationProgressModal__update-status">

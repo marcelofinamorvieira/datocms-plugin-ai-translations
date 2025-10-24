@@ -20,7 +20,8 @@
  */
 
 import type { RenderItemFormSidebarPanelCtx } from 'datocms-plugin-sdk';
-import OpenAI from 'openai';
+import type { TranslationProvider } from './translation/types';
+import { getProvider } from './translation/ProviderFactory';
 import {
   type ctxParamsType,
   modularContentVariations,
@@ -28,6 +29,7 @@ import {
 import { prepareFieldTypePrompt, getExactSourceValue } from './translation/SharedFieldUtils';
 import { translateFieldValue, generateRecordContext } from './translation/TranslateField';
 import { createLogger } from './logging/Logger';
+import { normalizeProviderError } from './translation/ProviderErrors';
 
 // Options for the translation process. Provides callback hooks that allow the
 // UI to respond to translation events and enables cancellation support for
@@ -79,11 +81,8 @@ export async function translateRecordFields(
   options: TranslateOptions = {}
 ): Promise<void> {
   const logger = createLogger(pluginParams, 'translateRecordFields');
-  // Initialize OpenAI client for translation
-  const openai = new OpenAI({
-    apiKey: pluginParams.apiKey,
-    dangerouslyAllowBrowser: true,
-  });
+  // Resolve provider (OpenAI for now)
+  const provider: TranslationProvider = getProvider(pluginParams);
 
   const currentFormValues = ctx.formValues;
 
@@ -106,6 +105,8 @@ export async function translateRecordFields(
   // Build a list of jobs (each field-locale translation) to run with adaptive concurrency
   type Job = { id: string; run: () => Promise<void>; retries: number };
   const jobs: Job[] = [];
+  let fatalAbort = false;
+  let fatalError: Error | null = null;
 
   for (const field of fieldsArray) {
     if (!field || !field.attributes) {
@@ -177,7 +178,7 @@ export async function translateRecordFields(
 
       jobs.push({ id: fieldPath, retries: 0, run: async () => {
         // Cancellation check before starting
-        if (options.checkCancellation?.()) return;
+        if (fatalAbort || options.checkCancellation?.()) return;
 
         const start = performance.now?.() ?? Date.now();
         options.onStart?.(fieldLabel, locale, fieldPath);
@@ -192,46 +193,79 @@ export async function translateRecordFields(
               options.onStream?.(fieldLabel, locale, fieldPath, chunk);
             }
           },
-          onComplete: () => {
-            options.onComplete?.(fieldLabel, locale, fieldPath);
-          },
           checkCancellation: options.checkCancellation,
           abortSignal: options.abortSignal,
         };
 
         // Perform the actual translation with streaming support
-        const translatedFieldValue = await translateFieldValue(
-          (fieldValue as LocalizedField)[sourceLocale],
-          pluginParams,
-          locale,
-          sourceLocale,
-          fieldType,
-          openai,
-          fieldTypePrompt,
-          ctx.currentUserAccessToken as string,
-          field.id,
-          ctx.environment,
-          streamCallbacks,
-          recordContext
-        );
+        try {
+          const translatedFieldValue = await translateFieldValue(
+            (fieldValue as LocalizedField)[sourceLocale],
+            pluginParams,
+            locale,
+            sourceLocale,
+            fieldType,
+            provider,
+            fieldTypePrompt,
+            ctx.currentUserAccessToken as string,
+            field.id,
+            ctx.environment,
+            streamCallbacks,
+            recordContext
+          );
 
-        // Yield one frame to let UI apply the 'done' animation before writing the form value
-        await nextFrame();
-        ctx.setFieldValue(fieldPath, translatedFieldValue);
-        const end = performance.now?.() ?? Date.now();
-        logger.info('Task finished', { fieldPath, ms: Math.round(end - start) });
+          // If the user cancelled during or after translation, do not write
+          if (fatalAbort || options.checkCancellation?.()) return;
+          // Yield one frame to let UI apply the 'done' animation before writing the form value
+          await nextFrame();
+          // Double-check cancellation just before write
+          if (fatalAbort || options.checkCancellation?.()) return;
+          await ctx.setFieldValue(fieldPath, translatedFieldValue);
+          // Mark this bubble as done only after the value is written
+          options.onComplete?.(fieldLabel, locale, fieldPath);
+          const end = performance.now?.() ?? Date.now();
+          logger.info('Task finished', { fieldPath, ms: Math.round(end - start) });
+        } catch (e) {
+          // Skip writes on user cancellation
+          if ((e as any)?.name === 'AbortError') {
+            return;
+          }
+          const norm = normalizeProviderError(e, provider.vendor);
+          // Fatal abort for DeepL wrong-endpoint configuration to avoid silent partials
+          if (provider.vendor === 'deepl' && /wrong endpoint/i.test(norm.message)) {
+            fatalAbort = true;
+            fatalError = new Error(norm.message);
+            throw fatalError;
+          }
+          // Treat OpenAI stream verification error as fatal for the whole run
+          if (provider.vendor === 'openai' && /verified to stream/i.test(norm.message)) {
+            fatalAbort = true;
+            fatalError = new Error(norm.message);
+            throw fatalError;
+          }
+          // Non-fatal: bubble stays pending/failed; value not written
+          throw e;
+        }
       }});
     }
   }
 
   // Adaptive concurrency scheduler with simple AIMD (additive-increase, multiplicative-decrease)
   // Derive a sensible cap from the chosen model; scheduler auto-tunes under this
-  const model = String(pluginParams.gptModel || '').toLowerCase();
+  // Choose the configured model string based on vendor for concurrency hints
+  const vendor = ((pluginParams as any).vendor as 'openai'|'google'|'anthropic'|'deepl') ?? 'openai';
+  const modelIdForConcurrency = vendor === 'google'
+    ? String((pluginParams as any).geminiModel || '').toLowerCase()
+    : String(pluginParams.gptModel || '').toLowerCase();
   const MAX_CAP = (() => {
-    if (/(^|-)nano$/.test(model) || model.includes('nano')) return 6;
-    if (/(^|-)mini$/.test(model) || model.includes('mini')) return 5;
-    // heavier general models
-    return 3;
+    // Light/fast profiles
+    if (/(^|[-])nano\b/.test(modelIdForConcurrency) || /flash|mini|lite/.test(modelIdForConcurrency)) return 6;
+    // Medium
+    if (/mini/.test(modelIdForConcurrency) || /1\.5/.test(modelIdForConcurrency)) return 5;
+    // Heavier "pro" / general models
+    if (/pro/.test(modelIdForConcurrency)) return 3;
+    // default middle ground
+    return 4;
   })();
   let currentConcurrency = MAX_CAP; // start at configured cap
   let active = 0;
@@ -253,7 +287,8 @@ export async function translateRecordFields(
   const delay = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
   let resolveDone: () => void;
-  const done = new Promise<void>((r) => (resolveDone = r));
+  let rejectDone: (e: any) => void;
+  const done = new Promise<void>((r, j) => { resolveDone = r; rejectDone = j; });
 
   const schedule = () => {
     if (isCancelled()) {
@@ -276,7 +311,10 @@ export async function translateRecordFields(
         })
         .catch(async (err) => {
           successStreak = 0;
-          if (isRateLimitError(err) && job.retries < MAX_RETRIES) {
+          if (fatalAbort) {
+            // Stop scheduling further jobs
+            nextIndex = jobs.length;
+          } else if (isRateLimitError(err) && job.retries < MAX_RETRIES) {
             job.retries += 1;
             currentConcurrency = Math.max(1, Math.ceil(currentConcurrency / 2));
             logger.warning('Rate limit detected; backing off', {
@@ -295,7 +333,8 @@ export async function translateRecordFields(
         .finally(() => {
           active--;
           if (nextIndex >= jobs.length && active === 0) {
-            resolveDone();
+            if (fatalAbort && fatalError) rejectDone(fatalError);
+            else resolveDone();
           } else {
             schedule();
           }

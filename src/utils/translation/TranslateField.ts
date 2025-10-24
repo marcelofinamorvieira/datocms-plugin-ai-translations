@@ -10,7 +10,7 @@
  * rich text, and file fields.
  */
 
-import OpenAI from 'openai';
+import type { TranslationProvider } from './types';
 import { buildClient } from '@datocms/cma-client-browser';
 import type { ExecuteFieldDropdownActionCtx } from 'datocms-plugin-sdk';
 import { 
@@ -24,6 +24,8 @@ import { translateStructuredTextValue } from './StructuredTextTranslation';
 import { translateFileFieldValue } from './FileFieldTranslation';
 import { deleteItemIdKeys } from './utils';
 import { createLogger } from '../logging/Logger';
+import { getProvider } from './ProviderFactory';
+import { normalizeProviderError } from './ProviderErrors';
 
 /**
  * Defines the callback interface for streaming translation results.
@@ -48,7 +50,7 @@ export type StreamCallbacks = {
  * @param toLocale - Target locale code
  * @param fromLocale - Source locale code
  * @param fieldType - The DatoCMS field type
- * @param openai - OpenAI client instance
+ * @param provider - TranslationProvider instance
  * @param fieldTypePrompt - Additional prompt for special field types
  * @param apiToken - DatoCMS API token
  * @param fieldId - ID of the field being translated
@@ -63,7 +65,7 @@ export async function translateFieldValue(
   toLocale: string,
   fromLocale: string,
   fieldType: string,
-  openai: OpenAI,
+  provider: TranslationProvider,
   fieldTypePrompt: string,
   apiToken: string,
   fieldId: string | undefined,
@@ -104,7 +106,7 @@ export async function translateFieldValue(
         pluginParams,
         toLocale,
         fromLocale,
-        openai,
+        provider,
         fieldTypePrompt,
         streamCallbacks,
         recordContext
@@ -115,7 +117,7 @@ export async function translateFieldValue(
         pluginParams,
         toLocale,
         fromLocale,
-        openai,
+        provider,
         apiToken,
         environment,
         streamCallbacks,
@@ -128,7 +130,7 @@ export async function translateFieldValue(
         pluginParams,
         toLocale,
         fromLocale,
-        openai,
+        provider,
         apiToken,
         fieldType,
         environment,
@@ -142,7 +144,7 @@ export async function translateFieldValue(
         pluginParams,
         toLocale,
         fromLocale,
-        openai,
+        provider,
         streamCallbacks,
         recordContext
       );
@@ -152,7 +154,7 @@ export async function translateFieldValue(
         pluginParams,
         toLocale,
         fromLocale,
-        openai,
+        provider,
         streamCallbacks,
         recordContext
       );
@@ -170,7 +172,7 @@ export async function translateFieldValue(
  * @param pluginParams - Plugin configuration parameters
  * @param toLocale - Target locale code
  * @param fromLocale - Source locale code
- * @param openai - OpenAI client instance
+ * @param provider - TranslationProvider instance
  * @param apiToken - DatoCMS API token
  * @param fieldType - The specific block field type
  * @param environment - Dato environment
@@ -183,7 +185,7 @@ async function translateBlockValue(
   pluginParams: ctxParamsType,
   toLocale: string,
   fromLocale: string,
-  openai: OpenAI,
+  provider: TranslationProvider,
   apiToken: string,
   fieldType: string,
   environment: string,
@@ -282,7 +284,7 @@ async function translateBlockValue(
           toLocale,
           fromLocale,
           fieldTypeDictionary[field]?.editor || 'text',
-          openai,
+          provider,
           nestedPrompt,
           apiToken,
           fieldTypeDictionary[field]?.id || '',
@@ -302,7 +304,7 @@ async function translateBlockValue(
  * Main entry point for translating a field value from one locale to another
  * 
  * This function is the primary interface called by the DatoCMS plugin UI.
- * It handles all the setup, including creating an OpenAI client, generating
+ * It handles all the setup, including creating a provider client, generating
  * record context, and managing streaming responses back to the UI.
  * 
  * @param fieldValue - The field value to translate
@@ -328,14 +330,11 @@ async function TranslateField(
   recordContext = ''
 ) {
   const apiToken = await ctx.currentUserAccessToken;
-  // Create OpenAI client instance
-  const openai = new OpenAI({
-    apiKey: pluginParams.apiKey,
-    dangerouslyAllowBrowser: true,
-  });
+  // Resolve provider (OpenAI for now; vendor-agnostic interface)
+  const provider = getProvider(pluginParams);
+  const logger = createLogger(pluginParams, 'TranslateField');
 
   try {
-    const logger = createLogger(pluginParams, 'TranslateField');
     logger.info('Starting field translation', { fieldType, fromLocale, toLocale });
 
     // Generate record context if not provided or use the existing one
@@ -368,7 +367,7 @@ async function TranslateField(
       toLocale,
       fromLocale,
       fieldType,
-      openai,
+      provider,
       fieldTypePrompt,
       apiToken as string,
       fieldApiKey, // This is already a string because of the nullish coalescing operator
@@ -380,8 +379,9 @@ async function TranslateField(
     logger.info('Field translation completed');
     return translatedValue;
   } catch (error) {
-    console.error('Translation failed:', error);
-    throw error;
+    const normalized = normalizeProviderError(error, provider.vendor);
+    logger.error('Translation failed', { message: normalized.message, code: normalized.code, hint: normalized.hint });
+    throw new Error(normalized.message);
   }
 }
 

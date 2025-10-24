@@ -1,6 +1,6 @@
 import type { RenderItemFormSidebarPanelCtx } from 'datocms-plugin-sdk';
 import { Button, Canvas, SelectField } from 'datocms-react-ui';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import type { ctxParamsType } from '../Config/ConfigScreen';
 import { motion, AnimatePresence } from 'framer-motion';
 import { translateRecordFields } from '../../utils/translateRecordFields';
@@ -75,6 +75,7 @@ export default function DatoGPTTranslateSidebar({ ctx }: PropTypes) {
       status: 'pending' | 'done';
       fieldPath: string;
       streamingContent?: string;
+      startedAt?: number;
     }[]
   >([]);
 
@@ -85,6 +86,17 @@ export default function DatoGPTTranslateSidebar({ ctx }: PropTypes) {
 
   // Reference to the AbortController for cancelling API requests
   const [abortController, setAbortController] = useState<AbortController | null>(null);
+
+  // Prevent duplicate success notices across effect and completion handler
+  const successShownRef = useRef(false);
+
+  function showSuccessNoticeOnce() {
+    if (successShownRef.current) return;
+    successShownRef.current = true;
+    ctx.notice('All fields translated successfully');
+    setShowTimer(true);
+    setProgress(100);
+  }
 
   // Timer effect
   useEffect(() => {
@@ -111,6 +123,8 @@ export default function DatoGPTTranslateSidebar({ ctx }: PropTypes) {
     };
   }, [showTimer]);
 
+  // Removed global long-running banner; rely on per-bubble hint instead
+
   // Show success as soon as all bubbles report done, without waiting for the worker to settle
   useEffect(() => {
     if (!isLoading || isCancelling || showTimer) return;
@@ -118,18 +132,20 @@ export default function DatoGPTTranslateSidebar({ ctx }: PropTypes) {
     const allDone = translationBubbles.every((b) => b.status === 'done');
     if (allDone) {
       const t = setTimeout(() => {
-        if (!showTimer) {
-          ctx.notice('All fields translated successfully');
-          setShowTimer(true);
-          setProgress(100);
-        }
+        showSuccessNoticeOnce();
       }, 100); // allow final bubble animation to commit
       return () => clearTimeout(t);
     }
   }, [translationBubbles, isLoading, isCancelling, showTimer, ctx]);
 
-  // If no valid API key or model is configured, prompt user to fix configuration
-  if (!pluginParams.apiKey || !pluginParams.gptModel) {
+  const vendor = (pluginParams.vendor as 'openai'|'google'|'anthropic'|'deepl') ?? 'openai';
+  const hasOpenAI = !!pluginParams.apiKey && !!pluginParams.gptModel && pluginParams.gptModel !== 'None';
+  const hasGoogle = !!pluginParams.googleApiKey && !!pluginParams.geminiModel;
+  const hasAnthropic = !!pluginParams.anthropicApiKey && !!pluginParams.anthropicModel;
+  const hasDeepL = !!(pluginParams as any).deeplApiKey && !!(pluginParams as any).deeplProxyUrl;
+  const configured = vendor === 'google' ? hasGoogle : vendor === 'anthropic' ? hasAnthropic : vendor === 'deepl' ? hasDeepL : hasOpenAI;
+  // If not configured, prompt user to fix configuration
+  if (!configured) {
     return (
       <Canvas ctx={ctx}>
         <div
@@ -149,7 +165,7 @@ export default function DatoGPTTranslateSidebar({ ctx }: PropTypes) {
               )
             }
           >
-            Insert a valid OpenAI API Key <br /> and select a GPT & DALL-E Model
+            Configure credentials for your selected AI vendor in settings
           </Button>
         </div>
       </Canvas>
@@ -166,6 +182,7 @@ export default function DatoGPTTranslateSidebar({ ctx }: PropTypes) {
     setIsLoading(true);
     setTranslationBubbles([]);
     setIsCancelling(false);
+    successShownRef.current = false;
     
     // Create a new AbortController for this translation session
     const controller = new AbortController();
@@ -183,7 +200,7 @@ export default function DatoGPTTranslateSidebar({ ctx }: PropTypes) {
               if (prev.some((b) => b.id === fieldPath)) return prev;
               return [
                 ...prev,
-                { id: fieldPath, fieldLabel, locale, status: 'pending', fieldPath },
+                { id: fieldPath, fieldLabel, locale, status: 'pending', fieldPath, startedAt: Date.now() },
               ];
             });
           },
@@ -211,12 +228,7 @@ export default function DatoGPTTranslateSidebar({ ctx }: PropTypes) {
       );
 
       if (!isCancelling) {
-        // If effect already showed success, don't duplicate
-        if (!showTimer) {
-          ctx.notice('All fields translated successfully');
-          setShowTimer(true);
-          setProgress(100);
-        }
+        showSuccessNoticeOnce();
       } else {
         ctx.notice('Translation cancelled');
         setIsCancelling(false);
@@ -359,6 +371,7 @@ export default function DatoGPTTranslateSidebar({ ctx }: PropTypes) {
               boxSizing: 'border-box',
             }}
           >
+            {/* Global banner removed per request; per-bubble hint handles feedback */}
             <div
               style={{
                 width: '100%',

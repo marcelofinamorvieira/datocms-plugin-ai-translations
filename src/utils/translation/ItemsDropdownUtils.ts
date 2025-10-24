@@ -2,7 +2,8 @@
  * Utilities for handling DatoCMS record translations via dropdown actions
  */
 import type { buildClient } from '@datocms/cma-client-browser';
-import type OpenAI from 'openai';
+import type { TranslationProvider } from './types';
+import { normalizeProviderError } from './ProviderErrors';
 import type { ctxParamsType } from '../../entrypoints/Config/ConfigScreen';
 // no specific ctx type required here; we accept a minimal ctx shape
 import { translateFieldValue, generateRecordContext } from './TranslateField';
@@ -241,7 +242,7 @@ function getFriendlyDatoErrorMessage(error: unknown, recordId: string): string |
  *
  * @param records - Records to translate.
  * @param client - CMA client.
- * @param openai - OpenAI client for field translation.
+ * @param provider - TranslationProvider for field translation.
  * @param fromLocale - Source locale key.
  * @param toLocale - Target locale key.
  * @param getFieldTypeDictionary - Async getter that returns a FieldTypeDictionary per item type.
@@ -253,7 +254,7 @@ function getFriendlyDatoErrorMessage(error: unknown, recordId: string): string |
 export async function translateAndUpdateRecords(
   records: DatoCMSRecordFromAPI[],
   client: ReturnType<typeof buildClient>,
-  openai: OpenAI,
+  provider: TranslationProvider,
   fromLocale: string,
   toLocale: string,
   getFieldTypeDictionary: (itemTypeId: string) => Promise<FieldTypeDictionary>,
@@ -301,7 +302,7 @@ export async function translateAndUpdateRecords(
         fromLocale,
         toLocale,
         fieldTypeDictionary,
-        openai,
+        provider,
         pluginParams,
         accessToken,
         ctx.environment,
@@ -350,7 +351,7 @@ export async function translateAndUpdateRecords(
  * @param fromLocale - Source locale key.
  * @param toLocale - Target locale key.
  * @param fieldTypeDictionary - Map of field API keys to editor type/IDs/localized flags.
- * @param openai - OpenAI client.
+ * @param provider - TranslationProvider instance.
  * @param pluginParams - Plugin configuration parameters.
  * @param accessToken - Current user API token for DatoCMS.
  * @param environment - Dato environment slug.
@@ -362,7 +363,7 @@ export async function buildTranslatedUpdatePayload(
   fromLocale: string,
   toLocale: string,
   fieldTypeDictionary: FieldTypeDictionary,
-  openai: OpenAI,
+  provider: TranslationProvider,
   pluginParams: ctxParamsType,
   accessToken: string,
   environment: string,
@@ -433,7 +434,7 @@ export async function buildTranslatedUpdatePayload(
           toLocale,
           fromLocale,
           fieldType,
-          openai,
+          provider,
           fieldTypePrompt,
           accessToken,
           fieldTypeDictionary[field].id,
@@ -447,7 +448,8 @@ export async function buildTranslatedUpdatePayload(
     } catch (error) {
       // On error during translation for this specific field, set its target locale to null.
       updatePayload[field][toLocale] = null;
-      console.error(`Error translating field ${field} for record ${record.id} in ItemsDropdownUtils:`, error);
+      const norm = normalizeProviderError(error, provider.vendor);
+      console.error(`Error translating field ${field} for record ${record.id}: ${norm.message}`);
       // Depending on desired behavior, you might want to collect these errors
       // or re-throw if one field error should stop the whole batch.
       // For now, it just sets to null and continues.
