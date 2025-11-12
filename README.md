@@ -89,6 +89,30 @@ The plugin includes a dedicated page for translating multiple models at once:
 
 ![AI Bulk Translations Page](https://github.com/user-attachments/assets/eefd5f25-efc7-4f3b-bf49-ff05d623b35c)
 
+## ICU Message Format Support
+
+The plugin fully supports [ICU message format](https://unicode-org.github.io/icu/userguide/format_parse/messages/) strings, commonly used in internationalization libraries like [next-intl](https://next-intl.dev/docs/usage/translations#icu-messages).
+
+ICU messages are automatically detected and handled correctly:
+
+```
+{count, plural, =0 {no items} =1 {one item} other {# items}}
+{gender, select, male {He} female {She} other {They}}
+{price, number, currency}
+{eventDate, date, long}
+```
+
+The plugin preserves the ICU structure while translating the text content within the message cases. This includes support for:
+
+- **Plural rules**: `{count, plural, ...}`
+- **Select statements**: `{gender, select, ...}`
+- **Number formatting**: `{price, number, ...}`
+- **Date/time formatting**: `{date, date, ...}` and `{time, time, ...}`
+- **Ordinal selection**: `{place, selectordinal, ...}`
+- **Nested ICU messages**: Complex messages with nested placeholders
+
+Simple placeholders like `{name}`, `{{variable}}`, `%s`, and `:slug` continue to work as expected and can be mixed with ICU messages in the same string.
+
 ## Contextual Translations
 
 The plugin now supports context-aware translations through the `{recordContext}` placeholder:
