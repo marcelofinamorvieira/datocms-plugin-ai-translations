@@ -4,7 +4,7 @@ type DeepLTranslateOpts = {
   sourceLang?: string;
   targetLang: string;
   isHTML?: boolean;
-  formality?: 'default'|'more'|'less';
+  formality?: 'default' | 'more' | 'less';
   preserveFormatting?: boolean;
   ignoreTags?: string[];
   nonSplittingTags?: string[];
@@ -71,13 +71,14 @@ export default class DeepLProvider implements TranslationProvider {
     const url = (this.proxyUrl || this.baseUrl).replace(/\/$/, '') + '/v2/translate';
     const out: string[] = new Array(segments.length);
     const batchSize = 45;
-    const headers: Record<string,string> = { 'content-type': 'application/json' };
+    const headers: Record<string, string> = { 'content-type': 'application/json' };
     if (!this.proxyUrl) headers['Authorization'] = `DeepL-Auth-Key ${this.apiKey}`;
 
-    for (let i=0; i<segments.length; i+=batchSize) {
-      const slice = segments.slice(i, i+batchSize);
+    for (let i = 0; i < segments.length; i += batchSize) {
+      const slice = segments.slice(i, i + batchSize);
+      const isFree = /api-free\.deepl\.com/i.test(this.baseUrl);
       const postUrl = this.proxyUrl
-        ? this.proxyUrl.replace(/\/$/, '') + '/v2/translate'
+        ? this.proxyUrl.replace(/\/$/, '') + (isFree ? '?endpoint=free' : '')
         : url;
       const makeBody = (injectGlossary: boolean): Record<string, unknown> => {
         const body: Record<string, unknown> = {
@@ -102,7 +103,7 @@ export default class DeepLProvider implements TranslationProvider {
       if (!res.ok) {
         let msg = res.statusText;
         let raw: any = null;
-        try { raw = await res.json(); msg = raw?.message || raw?.error?.message || msg; } catch {}
+        try { raw = await res.json(); msg = raw?.message || raw?.error?.message || msg; } catch { }
         const isGlossaryMismatch = /glossary/i.test(msg) && /(language|pair|match|not found)/i.test(msg);
         // Graceful fallback: if glossary caused a 4xx, retry once without it
         if (opts.glossaryId && isGlossaryMismatch && res.status >= 400 && res.status < 500) {
@@ -112,15 +113,15 @@ export default class DeepLProvider implements TranslationProvider {
 
       if (!res.ok) {
         let msg = res.statusText;
-        try { const err = await res.json(); msg = err?.message || err?.error?.message || msg; } catch {}
+        try { const err = await res.json(); msg = err?.message || err?.error?.message || msg; } catch { }
         if (/wrong endpoint/i.test(msg)) {
           const isFreeKey = /:fx\b/i.test(this.apiKey);
           const usingPro = /api\.deepl\.com/i.test(this.baseUrl);
           const hint = isFreeKey && usingPro
             ? 'Your key looks like a Free key (:fx), but the Pro endpoint is configured. In Settings → DeepL, enable "Use DeepL Free endpoint (api-free.deepl.com)".'
             : (!isFreeKey && /api-free\.deepl\.com/i.test(this.baseUrl))
-            ? 'A Pro key is being used with the Free endpoint. In Settings → DeepL, disable "Use DeepL Free endpoint" to use api.deepl.com.'
-            : 'Ensure the endpoint matches your plan: api-free.deepl.com for Free (:fx) keys; api.deepl.com for Pro.';
+              ? 'A Pro key is being used with the Free endpoint. In Settings → DeepL, disable "Use DeepL Free endpoint" to use api.deepl.com.'
+              : 'Ensure the endpoint matches your plan: api-free.deepl.com for Free (:fx) keys; api.deepl.com for Pro.';
           msg = `DeepL: wrong endpoint for your API key. ${hint}`;
         }
         const e = new Error(msg);
@@ -130,7 +131,7 @@ export default class DeepLProvider implements TranslationProvider {
 
       const data = await res.json();
       const translations: string[] = Array.isArray(data?.translations) ? data.translations.map((t: any) => String(t?.text ?? '')) : [];
-      for (let j=0; j<slice.length; j++) out[i+j] = translations[j] ?? slice[j];
+      for (let j = 0; j < slice.length; j++) out[i + j] = translations[j] ?? slice[j];
     }
     return out;
   }

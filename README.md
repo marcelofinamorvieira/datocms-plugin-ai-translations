@@ -159,7 +159,11 @@ export default {
     };
     if (req.method === 'OPTIONS') return new Response(null, { headers: cors });
 
-    const upstream = new URL('/v2/translate', env.DEEPL_BASE_URL || 'https://api.deepl.com');
+    const url = new URL(req.url);
+    const isFree = url.searchParams.get('endpoint') === 'free';
+    const baseUrl = isFree ? 'https://api-free.deepl.com' : 'https://api.deepl.com';
+    const upstream = new URL('/v2/translate', baseUrl);
+
     const body = await req.text(); // passthrough JSON body
 
     const resp = await fetch(upstream, {
@@ -195,7 +199,10 @@ export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Headers', '*');
   if (req.method === 'OPTIONS') return res.status(204).end();
 
-  const upstream = `${process.env.DEEPL_BASE_URL || 'https://api.deepl.com'}/v2/translate`;
+  const isFree = req.query.endpoint === 'free';
+  const baseUrl = isFree ? 'https://api-free.deepl.com' : 'https://api.deepl.com';
+  const upstream = `${baseUrl}/v2/translate`;
+
   const r = await fetch(upstream, {
     method: 'POST',
     headers: {
@@ -229,7 +236,11 @@ export const handler = async (event) => {
   if (event.httpMethod === 'OPTIONS') {
     return { statusCode: 204, headers: { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': '*' } };
   }
-  const upstream = `${process.env.DEEPL_BASE_URL || 'https://api.deepl.com'}/v2/translate`;
+
+  const isFree = event.queryStringParameters?.endpoint === 'free';
+  const baseUrl = isFree ? 'https://api-free.deepl.com' : 'https://api.deepl.com';
+  const upstream = `${baseUrl}/v2/translate`;
+
   const r = await fetch(upstream, {
     method: 'POST',
     headers: {
@@ -267,8 +278,7 @@ Endpoint selection (Free vs Pro)
 
 That’s it — once your proxy passes the test, DeepL translations (including large Structured Text fields) will work end‑to‑end.
 
-See also
-- CLI step‑by‑steps for deploying a proxy (Cloudflare, Vercel, Netlify): docs/DeepL-Proxy-CLI.md
+
 
 ## DeepL Glossaries
 
