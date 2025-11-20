@@ -15,8 +15,16 @@ type Options = {
   recordContext?: string;
 };
 
+/**
+ * Map of safe tokens to their original values.
+ */
 export type TokenMap = { safe: string; orig: string }[];
 
+/**
+ * Replaces placeholders and variables with safe tokens to protect them during translation.
+ * @param text - The input text to tokenize.
+ * @returns An object containing the safe text and a map of tokens to original values.
+ */
 export function tokenize(text: string): { safe: string; map: TokenMap } {
   const patterns = [
     /\{\{[^}]+\}\}/g, // {{var}}
@@ -37,6 +45,12 @@ export function tokenize(text: string): { safe: string; map: TokenMap } {
   return { safe, map };
 }
 
+/**
+ * Restores original placeholders and variables from safe tokens.
+ * @param text - The text with safe tokens.
+ * @param map - The map of tokens to original values.
+ * @returns The text with original values restored.
+ */
 function detokenize(text: string, map: TokenMap): string {
   let out = text;
   for (const { safe, orig } of map) {
