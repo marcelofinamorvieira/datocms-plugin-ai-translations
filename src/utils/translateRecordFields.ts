@@ -93,39 +93,98 @@ export async function translateRecordFields(
   const STREAM_THROTTLE_MS = 33;
   const lastStreamAt = new Map<string, number>();
 
-  // Get all fields that belong to the current item type
-  const fieldsArray = Object.values(ctx.fields).filter(
-    (field) => field?.relationships.item_type.data.id === ctx.itemType.id
-  );
-
-  // Small helper to yield to the UI thread to avoid visible stalls
+  // Small helper to yield to the UI thread
   const nextFrame = () =>
     new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
 
-  // Build a list of jobs (each field-locale translation) to run with adaptive concurrency
+  // Build job list
   type Job = { id: string; run: () => Promise<void>; retries: number };
   const jobs: Job[] = [];
   let fatalAbort = false;
   let fatalError: Error | null = null;
 
-  for (const field of fieldsArray) {
+  // Helper to find field value and path (including nested frameless block fields)
+  const findFieldValueAndPath = (
+    field: NonNullable<typeof ctx.fields[string]>,
+    formValues: Record<string, unknown>
+  ): { value: unknown; basePath: string; isFramelessField?: boolean; framelessParentKey?: string } | null => {
+    const fieldApiKey = field.attributes.api_key;
+    
+    // First try: direct access (top-level fields)
+    let fieldValue = formValues[fieldApiKey];
+    if (fieldValue && typeof fieldValue === 'object' && !Array.isArray(fieldValue)) {
+      return { value: fieldValue, basePath: fieldApiKey, isFramelessField: false };
+    }
+    
+    // Second try: search inside frameless blocks
+    for (const [parentKey, parentValue] of Object.entries(formValues)) {
+      if (parentValue && typeof parentValue === 'object' && !Array.isArray(parentValue)) {
+        const parentObj = parentValue as Record<string, unknown>;
+        
+        // Check if this might be a frameless block (has locale keys)
+        const hasLocaleKeys = Object.keys(parentObj).some(k => 
+          ctx.formValues.internalLocales && 
+          (ctx.formValues.internalLocales as string[]).includes(k)
+        );
+        
+        if (hasLocaleKeys) {
+          // This looks like a localized field, check if it contains our nested field
+          // Structure: { en: { nestedField: value }, it: { nestedField: value } }
+          const localeValues: Record<string, unknown> = {};
+          let foundNested = false;
+          
+          for (const locale of Object.keys(parentObj)) {
+            const localeContent = parentObj[locale];
+            if (localeContent && typeof localeContent === 'object' && !Array.isArray(localeContent)) {
+              const nested = (localeContent as Record<string, unknown>)[fieldApiKey];
+              if (nested !== undefined) {
+                localeValues[locale] = nested;
+                foundNested = true;
+              }
+            }
+          }
+          
+          if (foundNested && Object.keys(localeValues).length > 0) {
+            // Found the field nested inside a frameless block
+            // Return the parentKey as basePath and mark it as a frameless field
+            return { 
+              value: localeValues, 
+              basePath: fieldApiKey,
+              isFramelessField: true,
+              framelessParentKey: parentKey
+            };
+          }
+        }
+      }
+    }
+    
+    return null;
+  };
+
+  // Process all fields in the context
+  for (const field of Object.values(ctx.fields)) {
     if (!field || !field.attributes) {
-      continue; // Skip invalid fields
+      continue;
     }
     
     // Check for user-initiated cancellation
     if (options.checkCancellation?.()) {
-      return; // Exit early if translation was cancelled
+      return;
     }
     
     const fieldType = field.attributes.appearance.editor;
-    const fieldValue = currentFormValues[field.attributes.api_key];
+    const fieldApiKey = field.attributes.api_key;
+    const fieldLabel = field.attributes.label || fieldApiKey;
+    
+    // Skip frameless_single_block fields themselves (we translate their nested fields instead)
+    if (fieldType === 'frameless_single_block') {
+      continue;
+    }
 
-    // Determine if this field is eligible for translation based on configuration
-    let isFieldTranslatable =
-      pluginParams.translationFields.includes(fieldType);
+    // Determine if this field is eligible for translation
+    let isFieldTranslatable = pluginParams.translationFields.includes(fieldType);
 
-    // Handle special cases for rich_text/modular content and file/gallery fields
+    // Handle special cases
     if (
       (pluginParams.translationFields.includes('rich_text') &&
         modularContentVariations.includes(fieldType)) ||
@@ -135,14 +194,49 @@ export async function translateRecordFields(
       isFieldTranslatable = true;
     }
 
+    // Check if this field is part of a frameless block
+    // If so, check if any frameless block field in the form is localized
+    let isFieldLocalized = field.attributes.localized;
+    if (!isFieldLocalized) {
+      // Check if this field belongs to a frameless block model
+      const fieldItemTypeId = field.relationships?.item_type?.data?.id;
+      if (fieldItemTypeId && fieldItemTypeId !== ctx.itemType.id) {
+        // This field belongs to a different item type, likely a frameless block
+        // Check if there's a frameless_single_block field in the current item type that references this model
+        const framelessFields = Object.values(ctx.fields).filter(
+          f => f?.attributes?.appearance?.editor === 'frameless_single_block' && f.attributes.localized
+        );
+        for (const framelessField of framelessFields) {
+          if (!framelessField) continue;
+          // Check if this frameless field's validations reference our field's item type
+          const validators = framelessField.attributes.validators;
+          if (validators && typeof validators === 'object') {
+            const singleBlockBlocks = (validators as any).single_block_blocks;
+            if (singleBlockBlocks && singleBlockBlocks.item_types && singleBlockBlocks.item_types.includes(fieldItemTypeId)) {
+              isFieldLocalized = true;
+              break;
+            }
+          }
+        }
+      }
+    }
+    
     // Skip fields that are not translatable, not localized, or explicitly excluded
     if (
       !isFieldTranslatable ||
-      !field.attributes.localized ||
+      !isFieldLocalized ||
       pluginParams.apiKeysToBeExcludedFromThisPlugin.includes(field.id)
     ) {
       continue;
     }
+
+    // Find the field value (handles both top-level and nested frameless fields)
+    const fieldInfo = findFieldValueAndPath(field, currentFormValues);
+    if (!fieldInfo) {
+      continue;
+    }
+
+    const { value: fieldValue, basePath, isFramelessField, framelessParentKey } = fieldInfo;
 
     // Skip if field is not an object of localized values
     if (!(fieldValue && typeof fieldValue === 'object' && !Array.isArray(fieldValue))) {
@@ -168,12 +262,14 @@ export async function translateRecordFields(
       continue;
     }
 
-    // Use field label for UI display, falling back to API key if no label is defined
-    const fieldLabel = field.attributes.label || field.attributes.api_key;
-
-    // Process each target locale for this field as tasks
+    // Process each target locale for this field
     for (const locale of targetLocales) {
-      const fieldPath = `${field.attributes.api_key}.${locale}`;
+      // Construct the correct path based on whether this is a frameless field or not
+      // For frameless fields: framelessParentKey.locale.fieldApiKey (e.g., details.it.subtitle)
+      // For regular fields: fieldApiKey.locale (e.g., name.it)
+      const fieldPath = isFramelessField && framelessParentKey
+        ? `${framelessParentKey}.${locale}.${basePath}`
+        : `${basePath}.${locale}`;
       const fieldTypePrompt = prepareFieldTypePrompt(fieldType);
 
       jobs.push({ id: fieldPath, retries: 0, run: async () => {
@@ -183,7 +279,7 @@ export async function translateRecordFields(
         const start = performance.now?.() ?? Date.now();
         options.onStart?.(fieldLabel, locale, fieldPath);
 
-        // Set up streaming callbacks to provide real-time updates
+        // Set up streaming callbacks
         const streamCallbacks = {
           onStream: (chunk: string) => {
             const now = Date.now();
@@ -197,7 +293,7 @@ export async function translateRecordFields(
           abortSignal: options.abortSignal,
         };
 
-        // Perform the actual translation with streaming support
+        // Perform translation
         try {
           const translatedFieldValue = await translateFieldValue(
             (fieldValue as LocalizedField)[sourceLocale],
@@ -214,36 +310,30 @@ export async function translateRecordFields(
             recordContext
           );
 
-          // If the user cancelled during or after translation, do not write
+          // Check cancellation before writing
           if (fatalAbort || options.checkCancellation?.()) return;
-          // Yield one frame to let UI apply the 'done' animation before writing the form value
           await nextFrame();
-          // Double-check cancellation just before write
           if (fatalAbort || options.checkCancellation?.()) return;
+          
           await ctx.setFieldValue(fieldPath, translatedFieldValue);
-          // Mark this bubble as done only after the value is written
           options.onComplete?.(fieldLabel, locale, fieldPath);
           const end = performance.now?.() ?? Date.now();
           logger.info('Task finished', { fieldPath, ms: Math.round(end - start) });
         } catch (e) {
-          // Skip writes on user cancellation
           if ((e as any)?.name === 'AbortError') {
             return;
           }
           const norm = normalizeProviderError(e, provider.vendor);
-          // Fatal abort for DeepL wrong-endpoint configuration to avoid silent partials
           if (provider.vendor === 'deepl' && /wrong endpoint/i.test(norm.message)) {
             fatalAbort = true;
             fatalError = new Error(norm.message);
             throw fatalError;
           }
-          // Treat OpenAI stream verification error as fatal for the whole run
           if (provider.vendor === 'openai' && /verified to stream/i.test(norm.message)) {
             fatalAbort = true;
             fatalError = new Error(norm.message);
             throw fatalError;
           }
-          // Non-fatal: bubble stays pending/failed; value not written
           throw e;
         }
       }});
