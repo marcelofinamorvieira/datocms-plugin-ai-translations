@@ -99,6 +99,22 @@ The plugin now supports context-aware translations through the `{recordContext}`
   - More accurate translations that respect the overall content meaning
   - Appropriate tone and style based on context
 
+## ICU Message Format Support
+
+The plugin supports **[ICU Message Format](https://unicode-org.github.io/icu/userguide/format_parse/messages/)** strings, ensuring that complex pluralization and selection logic is preserved during translation.
+
+- **Smart Masking**: Simple variables like `{name}` are masked to protect them, while ICU structures like `{count, plural, ...}` are passed to the AI.
+- **AI Instructions**: The AI is explicitly instructed to preserve the ICU structure and keywords, translating only the human-readable content inside.
+
+**Example:**
+```
+You have {count, plural, one {# message} other {# messages}}
+```
+Becomes:
+```
+Você tem {count, plural, one {# mensagem} other {# mensagens}}
+```
+
 ## Customizing Prompts
 
 You can customize the translation prompt template in the plugin settings:

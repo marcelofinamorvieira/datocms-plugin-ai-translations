@@ -19,6 +19,12 @@ Use this context to:
 
 {recordContext}
 
+ICU MESSAGE FORMAT HANDLING:
+- You may encounter ICU Message Format strings (e.g., "{gender, select, male {He said} female {She said}}")
+- You MUST preserve the structure, keywords, and variable keys exactly
+- ONLY translate the human-readable content inside the brackets
+
+
 TRANSLATION REQUEST:
 Translate the following content from {fromLocale} to {toLocale}:
 

@@ -11,16 +11,16 @@ import { resolveGlossaryId } from './DeepLGlossary';
 
 type Options = {
   isHTML?: boolean;
-  formality?: 'default'|'more'|'less';
+  formality?: 'default' | 'more' | 'less';
   recordContext?: string;
 };
 
-type TokenMap = { safe: string; orig: string }[];
+export type TokenMap = { safe: string; orig: string }[];
 
-function tokenize(text: string): { safe: string; map: TokenMap } {
+export function tokenize(text: string): { safe: string; map: TokenMap } {
   const patterns = [
     /\{\{[^}]+\}\}/g, // {{var}}
-    /\{[^}]+\}/g,       // {var}
+    /\{[\w.-]+\}/g,     // {var} (strict simple variables only, to avoid masking ICU)
     /%[0-9]*\$?[sd]/g,  // %s, %1$s
     /:[a-zA-Z_][a-zA-Z0-9_-]*/g, // :slug
   ];
@@ -91,7 +91,7 @@ export async function translateArray(
         formality,
         preserveFormatting: pluginParams?.deeplPreserveFormatting !== false,
         ignoreTags: ['notranslate', 'ph'],
-        nonSplittingTags: ['a','code','pre','strong','em','ph','notranslate'],
+        nonSplittingTags: ['a', 'code', 'pre', 'strong', 'em', 'ph', 'notranslate'],
         splittingTags: [],
         glossaryId: resolveGlossaryId(pluginParams, fromLocale, toLocale),
       });
@@ -99,7 +99,7 @@ export async function translateArray(
       // Chat vendors: JSON-array prompt
       const from = fromLocale;
       const to = toLocale;
-      const instruction = `Translate the following array of strings from ${from} to ${to}. Return ONLY a valid JSON array of the exact same length, preserving placeholders like {foo}, {{bar}}, and tokens like ⟦PH_0⟧. Do not explain.`;
+      const instruction = `Translate the following array of strings from ${from} to ${to}. Return ONLY a valid JSON array of the exact same length, preserving placeholders like {foo}, {{bar}}, and tokens like ⟦PH_0⟧. You may encounter ICU Message Format strings (e.g., {gender, select, male {He said} female {She said}}). You MUST preserve the structure, keywords, and variable keys exactly. ONLY translate the human-readable content inside the brackets. Do not explain.`;
       const arrayLiteral = JSON.stringify(protectedSegments);
       const prompt = `${instruction}\n${arrayLiteral}`;
       const txt = await provider.completeText(prompt);
@@ -109,12 +109,12 @@ export async function translateArray(
         // hard repair: try to extract between first [ and last ]
         const start = txt.indexOf('[');
         const end = txt.lastIndexOf(']');
-        arr = start >=0 && end>start ? JSON.parse(txt.slice(start, end+1)) : [];
+        arr = start >= 0 && end > start ? JSON.parse(txt.slice(start, end + 1)) : [];
       }
       if (!Array.isArray(arr)) throw new Error('Model did not return a JSON array');
       // Length repair
       const fixed: string[] = [];
-      for (let i=0; i<segments.length; i++) {
+      for (let i = 0; i < segments.length; i++) {
         const v = arr[i];
         fixed.push(typeof v === 'string' ? v : String(segments[i] ?? ''));
       }
