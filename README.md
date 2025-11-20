@@ -315,6 +315,31 @@ The plugin supports DeepL glossaries to enforce preferred terminology. You can s
 
 You can use either DatoCMS locales (e.g., `en-US`, `pt-BR`) or DeepL codes (e.g., `EN`, `PT-BR`). The plugin normalizes both to DeepL codes internally.
 
+### Configuration Examples
+
+**Scenario A: Single Language Pair**
+If you only translate from English to German, you only need one glossary.
+- **Default glossary ID**: `gls-12345` (Your EN->DE glossary)
+- **Glossaries by language pair**: *(Leave empty)*
+
+**Scenario B: Multiple Language Pairs**
+If you translate to multiple languages, map each one specifically.
+- **Default glossary ID**: *(Leave empty)*
+- **Glossaries by language pair**:
+  ```text
+  EN->DE=gls-german123
+  EN->FR=gls-french456
+  ```
+
+**Scenario C: Fallback Strategy**
+Use specific glossaries for main languages, and a default for everything else.
+- **Default glossary ID**: `gls-fallback999`
+- **Glossaries by language pair**:
+  ```text
+  EN->DE=gls-german123
+  ```
+*(Note: If the default glossary doesn't match the language pair of a translation, the plugin will automatically retry without it.)*
+
 ### Mapping Syntax
 
 One entry per line. Supported forms:
