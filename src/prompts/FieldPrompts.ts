@@ -1,5 +1,5 @@
 /**
- * fieldPrompts.tsx
+ * FieldPrompts.ts
  * Field-specific output format hints appended to the base prompt.
  * Used to cue the LLM to return values in the expected DatoCMS field shape.
  */
@@ -27,3 +27,4 @@ export const fieldPrompt = {
   rich_text: '',
   file: 'A valid JSON string of an object with the following format: {title: "translated title", alt: "translated alt"} make it A valid JSON string. Only return the json string, nothing else. Ignore previous instructions about quotes. Just dont wrap the whole json string in quotes, but wrap key and values in quotes',
 };
+

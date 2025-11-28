@@ -4,9 +4,7 @@ import { AiOutlineOpenAI } from 'react-icons/ai';
 import { BsCheckCircleFill } from 'react-icons/bs';
 import type { Theme } from 'datocms-plugin-sdk';
 import styles from '../../../styles.module.css';
-import locale from 'locale-codes';
-
-const localeSelect = locale.getByTag;
+import { localeSelect } from '../../../utils/localeUtils';
 /**
  * ChatbubbleTranslate.tsx
  *

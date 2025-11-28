@@ -18,6 +18,7 @@ import {
   modularContentVariations,
 } from '../../entrypoints/Config/ConfigScreen';
 import { fieldPrompt } from '../../prompts/FieldPrompts';
+import { isFieldTranslatable } from './SharedFieldUtils';
 import { translateDefaultFieldValue } from './DefaultTranslation';
 import { type SeoObject, translateSeoFieldValue } from './SeoTranslation';
 import { translateStructuredTextValue } from './StructuredTextTranslation';
@@ -70,9 +71,6 @@ export async function translateFieldValue(
   
   logger.info(`Translating field of type: ${fieldType}`, { fromLocale, toLocale });
   
-  // If this field type is not in the plugin config or has no value, return as is
-  let isFieldTranslatable = pluginParams.translationFields.includes(fieldType);
-
   // Convert fieldId to a string to handle the undefined case
   const safeFieldId = fieldId || '';
 
@@ -80,15 +78,14 @@ export async function translateFieldValue(
     return fieldValue;
   }
 
-  if (
-    (pluginParams.translationFields.includes('rich_text') &&
-      modularContentVariations.includes(fieldType)) ||
-    (pluginParams.translationFields.includes('file') && fieldType === 'gallery')
-  ) {
-    isFieldTranslatable = true;
-  }
+  // If this field type is not in the plugin config or has no value, return as is
+  const fieldTranslatable = isFieldTranslatable(
+    fieldType,
+    pluginParams.translationFields,
+    modularContentVariations
+  );
 
-  if (!isFieldTranslatable || !fieldValue) {
+  if (!fieldTranslatable || !fieldValue) {
     return fieldValue;
   }
 
@@ -155,6 +152,12 @@ export async function translateFieldValue(
 }
 
 /**
+ * Module-level cache for block field metadata.
+ * Avoids repeated CMA calls when translating multiple blocks of the same type.
+ */
+const blockFieldsCache = new Map<string, Record<string, { editor: string; id: string }>>();
+
+/**
  * Translates modular content and framed block fields
  * 
  * This specialized translator handles block-based content structures,
@@ -196,12 +199,6 @@ async function translateBlockValue(
 
   const client = buildClient({ apiToken, environment });
 
-  // Cache field metadata per block model to avoid repeated CMA calls
-  const fieldsCache: Map<string, Record<string, { editor: string; id: string }>> =
-    (translateBlockValue as unknown as { __fieldsCache?: Map<string, Record<string, { editor: string; id: string }>> }).__fieldsCache ??
-    new Map();
-  (translateBlockValue as unknown as { __fieldsCache?: Map<string, Record<string, { editor: string; id: string }>> }).__fieldsCache = fieldsCache;
-
   for (const block of cleanedFieldValue) {
     // Determine the block model ID
     // biome-ignore lint/suspicious/noExplicitAny: <i need to type blocks here>
@@ -212,7 +209,7 @@ async function translateBlockValue(
     }
 
     // Fetch fields for this specific block (with memoization)
-    let fieldTypeDictionary = fieldsCache.get(String(blockModelId));
+    let fieldTypeDictionary = blockFieldsCache.get(String(blockModelId));
     if (!fieldTypeDictionary) {
       const fields = await client.fields.list(blockModelId as string);
       fieldTypeDictionary = fields.reduce((acc, field) => {
@@ -222,7 +219,7 @@ async function translateBlockValue(
         };
         return acc;
       }, {} as Record<string, { editor: string; id: string }>);
-      fieldsCache.set(String(blockModelId), fieldTypeDictionary);
+      blockFieldsCache.set(String(blockModelId), fieldTypeDictionary);
     }
 
     // Translate each field within the block
@@ -422,27 +419,7 @@ export function generateRecordContext(formValues: Record<string, unknown>, sourc
   return hasAddedContext ? contextStr : '';
 }
 
-/**
- * Helper function to find the exact case-sensitive locale key in an object.
- * This is essential for properly handling hyphenated locales (e.g., "pt-BR", "pt-br")
- * as DatoCMS requires exact case matches for locale keys.
- *
- * @param obj - The object containing locale keys
- * @param localeCode - The locale code to search for (case-insensitive)
- * @returns The exact locale key as it appears in the object, or undefined if not found
- */
-export function findExactLocaleKey(obj: Record<string, unknown>, localeCode: string): string | undefined {
-  if (!obj || typeof obj !== 'object') return undefined;
-
-  const normalizedLocale = localeCode.toLowerCase();
-
-  for (const key in obj) {
-    if (key.toLowerCase() === normalizedLocale) {
-      return key; // Return the exact key with original casing
-    }
-  }
-
-  return undefined;
-}
+// Re-export findExactLocaleKey for backwards compatibility
+export { findExactLocaleKey } from './SharedFieldUtils';
 
 export default TranslateField;

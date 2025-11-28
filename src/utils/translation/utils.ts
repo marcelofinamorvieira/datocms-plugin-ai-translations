@@ -1,6 +1,23 @@
 // src/utils/translation/utils.ts
 
 /**
+ * Checks if a structured text field value is effectively empty.
+ * A structured text is considered empty if it contains only a single paragraph
+ * node with an empty text child.
+ *
+ * @param value - The structured text value to check.
+ * @returns True if the value represents an empty structured text field.
+ */
+export function isEmptyStructuredText(value: unknown): boolean {
+  if (!Array.isArray(value) || value.length !== 1) return false;
+  const node = value[0] as Record<string, unknown> | null;
+  if (typeof node !== 'object' || node === null) return false;
+  if (!('type' in node) || node.type !== 'paragraph') return false;
+  const children = node.children as Array<{ text?: string }> | undefined;
+  return children?.length === 1 && children[0]?.text === '';
+}
+
+/**
  * Recursively extracts all text values from a nested structure,
  * commonly used with structured text fields.
  *

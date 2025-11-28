@@ -5,6 +5,7 @@
  * chat models (OpenAI, Gemini, Anthropic).
  */
 import type { TranslationProvider } from './types';
+import type { ctxParamsType } from '../../entrypoints/Config/ConfigScreen';
 import { normalizeProviderError } from './ProviderErrors';
 import { mapDatoToDeepL, isFormalitySupported } from './DeepLMap';
 import { resolveGlossaryId } from './DeepLGlossary';
@@ -74,7 +75,7 @@ function detokenize(text: string, map: TokenMap): string {
  */
 export async function translateArray(
   provider: TranslationProvider,
-  pluginParams: any,
+  pluginParams: ctxParamsType,
   segments: string[],
   fromLocale: string,
   toLocale: string,

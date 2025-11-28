@@ -257,167 +257,105 @@ export async function translateStructuredTextValue(
 
   logger.info(`Found ${textValues.length} text nodes to translate`);
 
-  // Format locales for better prompt clarity
-  const localeMapper = new Intl.DisplayNames([fromLocale], { type: 'language' });
-  const fromLocaleName = localeMapper.of(fromLocale) || fromLocale;
-  const toLocaleName = localeMapper.of(toLocale) || toLocale;
-
-  // Construct the prompt using the template system for consistency
-  let prompt = (pluginParams.prompt || '')
-    .replace(
-      '{fieldValue}',
-      `translate the following string array ${JSON.stringify(
-        textValues,
-        null,
-        2
-      )}`
-    )
-    .replace('{fromLocale}', fromLocaleName)
-    .replace('{toLocale}', toLocaleName)
-    .replace('{recordContext}', recordContext || 'Record context: No additional context available.');
-
-  // Clear, explicit instructions for array handling
-  prompt += `
-IMPORTANT: Your response must be a valid JSON array of strings with EXACTLY ${textValues.length} elements. Each element corresponds to the same position in the original array.
-- Preserve ALL empty strings - do not remove or modify them
-- Maintain the exact array length
-- Return only the array of strings in valid JSON format
-- Do not nest the array in an object
-- Preserve all whitespace and spacing patterns`;
-
-  // Log the prompt being sent
-  logger.logPrompt('Structured text translation prompt', prompt);
-
   try {
-    let translatedText = '';
-    const shouldStream = !!(streamCallbacks?.onStream || streamCallbacks?.checkCancellation);
-    if (!shouldStream) {
-      translatedText = await provider.completeText(prompt, { abortSignal: streamCallbacks?.abortSignal });
-    } else for await (const delta of provider.streamText(prompt, { abortSignal: streamCallbacks?.abortSignal })) {
-      // Cooperative cancellation
-      if (streamCallbacks?.checkCancellation?.()) {
-        logger.info('Structured text translation cancelled by user');
-        const err: any = new Error('Aborted');
-        err.name = 'AbortError';
-        throw err;
-      }
-      translatedText += delta;
+    // Translate inline text values as an array using helper
+    const translatedValues = await translateArray(
+      provider,
+      pluginParams,
+      textValues,
+      fromLocale,
+      toLocale,
+      { isHTML: false, recordContext }
+    );
 
-      if (streamCallbacks?.onStream) {
-        streamCallbacks.onStream(translatedText);
-      }
-    }
-
-    if (streamCallbacks?.onComplete && shouldStream) {
-      streamCallbacks.onComplete();
-    }
-
-    // Log response
-    logger.logResponse('Structured text translation response', translatedText);
-
-    try {
-      // Translate inline text values as an array using helper
-      const translatedValues = await translateArray(
-        provider,
-        pluginParams,
-        textValues,
-        fromLocale,
-        toLocale,
-        { isHTML: false, recordContext }
+    // Check for length mismatch and attempt recovery
+    let processedTranslatedValues = translatedValues;
+    
+    if (translatedValues.length !== textValues.length) {
+      logger.warning(
+        `Translation mismatch: got ${translatedValues.length} values, expected ${textValues.length}`,
+        { original: textValues, translated: translatedValues }
       );
-
-      // Check for length mismatch and attempt recovery
-      let processedTranslatedValues = translatedValues;
       
-      if (translatedValues.length !== textValues.length) {
-        logger.warning(
-          `Translation mismatch: got ${translatedValues.length} values, expected ${textValues.length}`,
-          { original: textValues, translated: translatedValues }
-        );
-        
-        // First align segments so pure-whitespace originals stay in-place
-        processedTranslatedValues = alignSegmentsPreservingWhitespace(textValues, translatedValues);
-        // If still off, pad/truncate conservatively
-        if (processedTranslatedValues.length !== textValues.length) {
-          processedTranslatedValues = ensureArrayLengthsMatch(textValues, processedTranslatedValues);
-        }
-        
-        logger.info('Adjusted translated values to match original length', {
-          adjustedLength: processedTranslatedValues.length
-        });
+      // First align segments so pure-whitespace originals stay in-place
+      processedTranslatedValues = alignSegmentsPreservingWhitespace(textValues, translatedValues);
+      // If still off, pad/truncate conservatively
+      if (processedTranslatedValues.length !== textValues.length) {
+        processedTranslatedValues = ensureArrayLengthsMatch(textValues, processedTranslatedValues);
       }
+      
+      logger.info('Adjusted translated values to match original length', {
+        adjustedLength: processedTranslatedValues.length
+      });
+    }
 
-      // Re-apply original edge whitespace to avoid word concatenation across inline nodes
-      processedTranslatedValues = preserveEdgeWhitespace(textValues, processedTranslatedValues);
-      // Finally, enforce required boundary spaces when the original had them
-      processedTranslatedValues = enforceBoundarySpaces(textValues, processedTranslatedValues);
-      // And if the original left ended with punctuation but translator dropped it,
-      // still keep a separating space.
-      processedTranslatedValues = enforcePunctuationBoundarySpaces(textValues, processedTranslatedValues);
+    // Re-apply original edge whitespace to avoid word concatenation across inline nodes
+    processedTranslatedValues = preserveEdgeWhitespace(textValues, processedTranslatedValues);
+    // Finally, enforce required boundary spaces when the original had them
+    processedTranslatedValues = enforceBoundarySpaces(textValues, processedTranslatedValues);
+    // And if the original left ended with punctuation but translator dropped it,
+    // still keep a separating space.
+    processedTranslatedValues = enforcePunctuationBoundarySpaces(textValues, processedTranslatedValues);
 
-      // Reconstruct the inline text portion with the newly translated text
-      const reconstructedObject = reconstructObject(
-        fieldValueWithoutBlocks,
-        processedTranslatedValues
+    // Reconstruct the inline text portion with the newly translated text
+    const reconstructedObject = reconstructObject(
+      fieldValueWithoutBlocks,
+      processedTranslatedValues
+    ) as StructuredTextNode[];
+
+    // Insert block nodes back into their original positions
+    let finalReconstructedObject = reconstructedObject;
+
+    // If there are block nodes, translate them separately
+    if (blockNodes.length > 0) {
+      logger.info(`Translating ${blockNodes.length} block nodes`);
+      
+      // Key change: Pass the entire blockNodes array to translateFieldValue
+      // and use 'rich_text' as the field type instead of translating each block separately
+      const translatedBlockNodes = await translateFieldValue(
+        blockNodes,
+        pluginParams,
+        toLocale,
+        fromLocale,
+        'rich_text', // Use rich_text instead of block
+        provider,
+        '',
+        apiToken,
+        '',
+        environment,
+        streamCallbacks,
+        recordContext
       ) as StructuredTextNode[];
 
-      // Insert block nodes back into their original positions
-      let finalReconstructedObject = reconstructedObject;
-
-      // If there are block nodes, translate them separately
-      if (blockNodes.length > 0) {
-        logger.info(`Translating ${blockNodes.length} block nodes`);
-        
-        // Key change: Pass the entire blockNodes array to translateFieldValue
-        // and use 'rich_text' as the field type instead of translating each block separately
-        const translatedBlockNodes = await translateFieldValue(
-          blockNodes,
-          pluginParams,
-          toLocale,
-          fromLocale,
-          'rich_text', // Use rich_text instead of block
-          provider,
-          '',
-          apiToken,
-          '',
-          environment,
-          streamCallbacks,
-          recordContext
-        ) as StructuredTextNode[];
-
-        // Insert translated blocks back at their original positions
-        for (const node of translatedBlockNodes) {
-          if (node.originalIndex !== undefined) {
-            finalReconstructedObject = insertObjectAtIndex(
-              finalReconstructedObject,
-              node,
-              node.originalIndex
-            );
-          }
+      // Insert translated blocks back at their original positions
+      for (const node of translatedBlockNodes) {
+        if (node.originalIndex !== undefined) {
+          finalReconstructedObject = insertObjectAtIndex(
+            finalReconstructedObject,
+            node,
+            node.originalIndex
+          );
         }
       }
-
-      // Remove temporary 'originalIndex' keys
-      const cleanedReconstructedObject = (finalReconstructedObject as StructuredTextNode[]).map(
-        ({ originalIndex, ...rest }) => rest
-      );
-
-      if(isAPIResponse) {
-        return {
-          document: {
-            children: cleanedReconstructedObject,
-            type: "root"
-          },
-          schema: "dast"
-        }
-      }
-
-      logger.info('Successfully translated structured text');
-      return cleanedReconstructedObject;
-    } catch (jsonError) {
-      logger.error('Failed to translate structured text array', jsonError);
-      return fieldValue;
     }
+
+    // Remove temporary 'originalIndex' keys
+    const cleanedReconstructedObject = (finalReconstructedObject as StructuredTextNode[]).map(
+      ({ originalIndex, ...rest }) => rest
+    );
+
+    if(isAPIResponse) {
+      return {
+        document: {
+          children: cleanedReconstructedObject,
+          type: "root"
+        },
+        schema: "dast"
+      }
+    }
+
+    logger.info('Successfully translated structured text');
+    return cleanedReconstructedObject;
   } catch (error) {
     const normalized = normalizeProviderError(error, provider.vendor);
     logger.error('Error during structured text translation', { message: normalized.message, code: normalized.code, hint: normalized.hint });

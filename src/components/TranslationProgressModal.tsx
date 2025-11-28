@@ -11,7 +11,7 @@ import {
 import { buildDatoCMSClient } from '../utils/clients';
 import { getProvider } from '../utils/translation/ProviderFactory';
 import type { ctxParamsType } from '../entrypoints/Config/ConfigScreen';
-// findExactLocaleKey no longer needed here
+import { getLocaleName } from '../utils/localeUtils';
 import './TranslationProgressModal.css';
 
 // ProgressUpdate type imported from ItemsDropdownUtils
@@ -122,32 +122,6 @@ export default function TranslationProgressModal({ ctx, parameters }: Translatio
   
   // Translation progress updates handled via shared translator callbacks
 
-  /**
-   * Formats a locale code for display, using the Intl API when possible
-   * Handles hyphenated locales like "pt-BR" correctly
-   */
-  function formatLocaleDisplay(localeCode: string): string {
-    try {
-      // Get the primary language code (e.g., "pt" from "pt-BR")
-      const primaryLanguage = localeCode.split('-')[0];
-
-      // Try to get a nice display name for the language part
-      const localeMapper = new Intl.DisplayNames(['en'], { type: 'language' });
-      const languageName = localeMapper.of(primaryLanguage);
-
-      if (localeCode.includes('-')) {
-        // If it's a hyphenated locale, show both the language name and the region code
-        const regionCode = localeCode.split('-')[1];
-        return `${languageName} (${regionCode})`;
-      }
-
-      return languageName || localeCode;
-    } catch (error) {
-      // Fallback if Intl API fails
-      return localeCode;
-    }
-  }
-
   // Calculate completed counts correctly considering all processed records (completed or error)
   const processedRecords = Object.values(
     progress.reduce((uniqueRecords, update) => {
@@ -198,7 +172,7 @@ export default function TranslationProgressModal({ ctx, parameters }: Translatio
         <div className="TranslationProgressModal__intro">
           <div className="TranslationProgressModal__languages">
             <p>
-              Translating from <strong>{formatLocaleDisplay(fromLocale)}</strong> to <strong>{formatLocaleDisplay(toLocale)}</strong>
+              Translating from <strong>{getLocaleName(fromLocale)}</strong> to <strong>{getLocaleName(toLocale)}</strong>
             </p>
             <p className="TranslationProgressModal__progress-text">
               Progress: {completedCount} of {totalRecords} records processed ({percentComplete}%)

@@ -26,7 +26,7 @@ import {
   type ctxParamsType,
   modularContentVariations,
 } from '../entrypoints/Config/ConfigScreen';
-import { prepareFieldTypePrompt, getExactSourceValue } from './translation/SharedFieldUtils';
+import { prepareFieldTypePrompt, getExactSourceValue, isFieldTranslatable } from './translation/SharedFieldUtils';
 import { translateFieldValue, generateRecordContext } from './translation/TranslateField';
 import { createLogger } from './logging/Logger';
 import { normalizeProviderError } from './translation/ProviderErrors';
@@ -182,17 +182,11 @@ export async function translateRecordFields(
     }
 
     // Determine if this field is eligible for translation
-    let isFieldTranslatable = pluginParams.translationFields.includes(fieldType);
-
-    // Handle special cases
-    if (
-      (pluginParams.translationFields.includes('rich_text') &&
-        modularContentVariations.includes(fieldType)) ||
-      (pluginParams.translationFields.includes('file') &&
-        fieldType === 'gallery')
-    ) {
-      isFieldTranslatable = true;
-    }
+    const fieldTranslatable = isFieldTranslatable(
+      fieldType,
+      pluginParams.translationFields,
+      modularContentVariations
+    );
 
     // Check if this field is part of a frameless block
     // If so, check if any frameless block field in the form is localized
@@ -223,7 +217,7 @@ export async function translateRecordFields(
     
     // Skip fields that are not translatable, not localized, or explicitly excluded
     if (
-      !isFieldTranslatable ||
+      !fieldTranslatable ||
       !isFieldLocalized ||
       pluginParams.apiKeysToBeExcludedFromThisPlugin.includes(field.id)
     ) {

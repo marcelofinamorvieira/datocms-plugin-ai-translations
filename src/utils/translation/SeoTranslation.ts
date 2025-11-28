@@ -19,6 +19,15 @@ import type { ctxParamsType } from '../../entrypoints/Config/ConfigScreen';
 import { createLogger } from '../logging/Logger';
 
 /**
+ * SEO field character limits as recommended by search engines.
+ * Title should be under 60 characters for optimal display in search results.
+ * Description should be under 160 characters to avoid truncation.
+ */
+const SEO_TITLE_MAX_LENGTH = 60;
+const SEO_DESCRIPTION_MAX_LENGTH = 160;
+const ELLIPSIS_OFFSET = 3; // Reserve space for "..."
+
+/**
  * Interface for SEO field object structure
  */
 export interface SeoObject {
@@ -104,14 +113,14 @@ export async function translateSeoFieldValue(
 
     // Update the original seoObject
     // Enforce character limits for SEO content
-    if (returnedSeoObject.title && returnedSeoObject.title.length > 60) {
-      logger.info(`SEO title exceeds 60 character limit (${returnedSeoObject.title.length}). Truncating...`);
-      returnedSeoObject.title = `${returnedSeoObject.title.substring(0, 57)}...`;
+    if (returnedSeoObject.title && returnedSeoObject.title.length > SEO_TITLE_MAX_LENGTH) {
+      logger.info(`SEO title exceeds ${SEO_TITLE_MAX_LENGTH} character limit (${returnedSeoObject.title.length}). Truncating...`);
+      returnedSeoObject.title = `${returnedSeoObject.title.substring(0, SEO_TITLE_MAX_LENGTH - ELLIPSIS_OFFSET)}...`;
     }
     
-    if (returnedSeoObject.description && returnedSeoObject.description.length > 160) {
-      logger.info(`SEO description exceeds 160 character limit (${returnedSeoObject.description.length}). Truncating...`);
-      returnedSeoObject.description = `${returnedSeoObject.description.substring(0, 157)}...`;
+    if (returnedSeoObject.description && returnedSeoObject.description.length > SEO_DESCRIPTION_MAX_LENGTH) {
+      logger.info(`SEO description exceeds ${SEO_DESCRIPTION_MAX_LENGTH} character limit (${returnedSeoObject.description.length}). Truncating...`);
+      returnedSeoObject.description = `${returnedSeoObject.description.substring(0, SEO_DESCRIPTION_MAX_LENGTH - ELLIPSIS_OFFSET)}...`;
     }
     
     seoObject.title = (returnedSeoObject.title as string) || (seoObject.title as string);

@@ -3,15 +3,7 @@
  * Configuration component for OpenAI vendor settings.
  */
 
-import {
-  Button,
-  CaretDownIcon,
-  CaretUpIcon,
-  Dropdown,
-  DropdownMenu,
-  DropdownOption,
-  TextField,
-} from 'datocms-react-ui';
+import { SelectField, TextField } from 'datocms-react-ui';
 import s from '../../styles.module.css';
 
 export interface OpenAIConfigProps {
@@ -44,31 +36,29 @@ export default function OpenAIConfig({
         />
       </div>
 
-      {/* GPT Model dropdown selector */}
+      {/* GPT Model select */}
       <div className={s.dropdownLabel}>
         <span className={s.label}>GPT Model*</span>
         <div className={s.modelSelect}>
-          <Dropdown
-            renderTrigger={({ open, onClick }) => (
-              <Button
-                onClick={onClick}
-                rightIcon={open ? <CaretUpIcon /> : <CaretDownIcon />}
-              >
-                {gptModel}
-              </Button>
-            )}
-          >
-            <DropdownMenu>
-              {listOfModels.map((model) => (
-                <DropdownOption key={model} onClick={() => setGptModel(model)}>
-                  {model}
-                </DropdownOption>
-              ))}
-            </DropdownMenu>
-          </Dropdown>
+          <SelectField
+            name="gptModel"
+            id="gptModel"
+            label=""
+            value={{ label: gptModel, value: gptModel }}
+            selectInputProps={{
+              options: listOfModels.map((m) => ({ label: m, value: m })),
+            }}
+            onChange={(newValue) => {
+              if (!Array.isArray(newValue)) {
+                const selected = newValue as { value: string } | null;
+                setGptModel(selected?.value || gptModel);
+              }
+            }}
+          />
         </div>
       </div>
     </>
   );
 }
+
 

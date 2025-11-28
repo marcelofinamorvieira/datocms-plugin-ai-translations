@@ -168,7 +168,6 @@ export default function ConfigScreen({ ctx }: { ctx: RenderConfigScreenCtx }) {
   const [geminiModel, setGeminiModel] = useState(pluginParams.geminiModel ?? 'gemini-1.5-flash');
   const [anthropicApiKey, setAnthropicApiKey] = useState(pluginParams.anthropicApiKey ?? '');
   const [anthropicModel, setAnthropicModel] = useState(pluginParams.anthropicModel ?? 'claude-3.5-haiku-latest');
-  const [deeplEndpoint, _setDeeplEndpoint] = useState<'auto'|'pro'|'free'>(pluginParams.deeplEndpoint ?? 'auto');
   const [deeplUseFree, setDeeplUseFree] = useState<boolean>(pluginParams.deeplUseFree ?? false);
   const [deeplFormality, setDeeplFormality] = useState<'default'|'more'|'less'>(pluginParams.deeplFormality ?? 'default');
   const [deeplPreserveFormatting, setDeeplPreserveFormatting] = useState<boolean>(pluginParams.deeplPreserveFormatting ?? true);
@@ -391,7 +390,6 @@ export default function ConfigScreen({ ctx }: { ctx: RenderConfigScreenCtx }) {
     geminiModel !== (pluginParams.geminiModel ?? 'gemini-1.5-flash') ||
     anthropicApiKey !== (pluginParams.anthropicApiKey ?? '') ||
     anthropicModel !== (pluginParams.anthropicModel ?? 'claude-3.5-haiku-latest') ||
-    deeplEndpoint !== (pluginParams.deeplEndpoint ?? 'auto') ||
     deeplUseFree !== (pluginParams.deeplUseFree ?? false) ||
     deeplFormality !== (pluginParams.deeplFormality ?? 'default') ||
     deeplPreserveFormatting !== (pluginParams.deeplPreserveFormatting ?? true) ||
@@ -423,7 +421,6 @@ export default function ConfigScreen({ ctx }: { ctx: RenderConfigScreenCtx }) {
     translateWholeRecord,
     translateBulkRecords,
     prompt,
-    deeplEndpoint,
     deeplUseFree,
     deeplFormality,
     deeplPreserveFormatting,
@@ -442,7 +439,6 @@ export default function ConfigScreen({ ctx }: { ctx: RenderConfigScreenCtx }) {
     pluginParams.geminiModel,
     pluginParams.anthropicApiKey,
     pluginParams.anthropicModel,
-    pluginParams.deeplEndpoint,
     pluginParams.deeplUseFree,
     pluginParams.deeplFormality,
     pluginParams.deeplPreserveFormatting,
@@ -757,7 +753,7 @@ export default function ConfigScreen({ ctx }: { ctx: RenderConfigScreenCtx }) {
                   anthropicApiKey,
                   anthropicModel,
                   deeplApiKey,
-                  deeplEndpoint,
+                  deeplEndpoint: pluginParams.deeplEndpoint ?? 'auto',
                   deeplUseFree,
                   deeplFormality,
                   deeplPreserveFormatting,

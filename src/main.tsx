@@ -36,7 +36,7 @@ import ConfigScreen, {
   translateFieldTypes,
 } from './entrypoints/Config/ConfigScreen';
 import { render } from './utils/render';
-import locale from 'locale-codes';
+import { localeSelect } from './utils/localeUtils';
 import TranslateField from './utils/translation/TranslateField';
 import DatoGPTTranslateSidebar from './entrypoints/Sidebar/DatoGPTTranslateSidebar';
 import LoadingAddon from './entrypoints/LoadingAddon';
@@ -44,12 +44,11 @@ import { defaultPrompt } from './prompts/DefaultPrompt';
 import TranslationProgressModal from './components/TranslationProgressModal';
 import AIBulkTranslationsPage from './entrypoints/CustomPage/AIBulkTranslationsPage';
 
-// Utility for getting locale name by tag
-const localeSelect = locale.getByTag;
-
 // Import refactored utility functions and types
 import { parseActionId } from './utils/translation/ItemsDropdownUtils';
 import { isProviderConfigured } from './utils/translation/ProviderFactory';
+import { isFieldTranslatable } from './utils/translation/SharedFieldUtils';
+import { isEmptyStructuredText } from './utils/translation/utils';
 
 /**
  * Helper function to get nested values by dot/bracket notation
@@ -324,26 +323,17 @@ connect({
     const isFieldExcluded =
       pluginParams.apiKeysToBeExcludedFromThisPlugin.includes(ctx.field.id);
 
-    let isFieldTranslatable = pluginParams.translationFields.includes(
-      ctx.field.attributes.appearance.editor
+    const fieldTranslatable = isFieldTranslatable(
+      ctx.field.attributes.appearance.editor,
+      pluginParams.translationFields,
+      modularContentVariations
     );
-
-    if (
-      (pluginParams.translationFields.includes('rich_text') &&
-        modularContentVariations.includes(
-          ctx.field.attributes.appearance.editor
-        )) ||
-      (pluginParams.translationFields.includes('file') &&
-        ctx.field.attributes.appearance.editor === 'gallery')
-    ) {
-      isFieldTranslatable = true;
-    }
 
     if (
       isModelExcluded ||
       isRoleExcluded ||
       isFieldExcluded ||
-      !isFieldTranslatable
+      !fieldTranslatable
     ) {
       return [];
     }
@@ -358,18 +348,10 @@ connect({
         getValueAtPath(ctx.formValues, ctx.fieldPath));
 
     // Specialized check for structured text that might appear empty
-    let isEmptyStructuredText =
-      fieldType === 'structured_text' &&
-      Array.isArray(fieldValue) &&
-      fieldValue.length === 1 &&
-      typeof fieldValue[0] === 'object' &&
-      fieldValue[0] !== null &&
-      'type' in fieldValue[0] &&
-      fieldValue[0].type === 'paragraph' &&
-      fieldValue[0].children?.length === 1 &&
-      fieldValue[0].children[0].text === '';
+    let emptyStructuredText =
+      fieldType === 'structured_text' && isEmptyStructuredText(fieldValue);
 
-    let hasFieldValueInThisLocale = !!fieldValue && !isEmptyStructuredText;
+    let hasFieldValueInThisLocale = !!fieldValue && !emptyStructuredText;
 
     // Check if there are multiple locales in this record
     const hasOtherLocales =
@@ -390,19 +372,12 @@ connect({
         ctx.locale
       ];
 
-      isEmptyStructuredText =
+      emptyStructuredText =
         fieldType === 'structured_text' &&
-        Array.isArray(fieldValueInThisLocale) &&
-        fieldValueInThisLocale.length === 1 &&
-        typeof fieldValueInThisLocale[0] === 'object' &&
-        fieldValueInThisLocale[0] !== null &&
-        'type' in fieldValueInThisLocale[0] &&
-        fieldValueInThisLocale[0].type === 'paragraph' &&
-        fieldValueInThisLocale[0].children.length === 1 &&
-        fieldValueInThisLocale[0].children[0].text === '';
+        isEmptyStructuredText(fieldValueInThisLocale);
 
       hasFieldValueInThisLocale =
-        !!fieldValueInThisLocale && !isEmptyStructuredText;
+        !!fieldValueInThisLocale && !emptyStructuredText;
     }
 
     const actionsArray: (DropdownAction | DropdownActionGroup)[] = [];

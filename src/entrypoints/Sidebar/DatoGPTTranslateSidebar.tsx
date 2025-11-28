@@ -6,10 +6,8 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { translateRecordFields } from '../../utils/translateRecordFields';
 import { ChatBubble } from './Components/ChatbubbleTranslate';
 import { MdCelebration } from 'react-icons/md';
-import locale from 'locale-codes';
+import { localeSelect } from '../../utils/localeUtils';
 import { isProviderConfigured } from '../../utils/translation/ProviderFactory';
-
-const localeSelect = locale.getByTag;
 /**
  * DatoGPTTranslateSidebar.tsx
  *
