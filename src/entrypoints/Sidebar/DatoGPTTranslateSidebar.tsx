@@ -7,6 +7,7 @@ import { translateRecordFields } from '../../utils/translateRecordFields';
 import { ChatBubble } from './Components/ChatbubbleTranslate';
 import { MdCelebration } from 'react-icons/md';
 import locale from 'locale-codes';
+import { isProviderConfigured } from '../../utils/translation/ProviderFactory';
 
 const localeSelect = locale.getByTag;
 /**
@@ -138,14 +139,8 @@ export default function DatoGPTTranslateSidebar({ ctx }: PropTypes) {
     }
   }, [translationBubbles, isLoading, isCancelling, showTimer, ctx]);
 
-  const vendor = (pluginParams.vendor as 'openai'|'google'|'anthropic'|'deepl') ?? 'openai';
-  const hasOpenAI = !!pluginParams.apiKey && !!pluginParams.gptModel && pluginParams.gptModel !== 'None';
-  const hasGoogle = !!pluginParams.googleApiKey && !!pluginParams.geminiModel;
-  const hasAnthropic = !!pluginParams.anthropicApiKey && !!pluginParams.anthropicModel;
-  const hasDeepL = !!(pluginParams as any).deeplProxyUrl;
-  const configured = vendor === 'google' ? hasGoogle : vendor === 'anthropic' ? hasAnthropic : vendor === 'deepl' ? hasDeepL : hasOpenAI;
   // If not configured, prompt user to fix configuration
-  if (!configured) {
+  if (!isProviderConfigured(pluginParams)) {
     return (
       <Canvas ctx={ctx}>
         <div

@@ -17,11 +17,11 @@ const cache = new Map<string, TranslationProvider>();
  * @returns A provider implementing the `TranslationProvider` interface.
  */
 export function getProvider(pluginParams: ctxParamsType): TranslationProvider {
-  const vendor = (pluginParams as any).vendor ?? 'openai';
+  const vendor = pluginParams.vendor ?? 'openai';
 
   if (vendor === 'google') {
-    const apiKey = (pluginParams as any).googleApiKey || '';
-    const model = (pluginParams as any).geminiModel || '';
+    const apiKey = pluginParams.googleApiKey ?? '';
+    const model = pluginParams.geminiModel ?? '';
     if (apiKey && model) {
       const key = `google:${apiKey}:${model}`;
       const cached = cache.get(key);
@@ -34,8 +34,8 @@ export function getProvider(pluginParams: ctxParamsType): TranslationProvider {
   }
 
   if (vendor === 'anthropic') {
-    const apiKey = (pluginParams as any).anthropicApiKey || '';
-    const model = (pluginParams as any).anthropicModel || '';
+    const apiKey = pluginParams.anthropicApiKey ?? '';
+    const model = pluginParams.anthropicModel ?? '';
     if (apiKey && model) {
       const key = `anthropic:${apiKey}:${model}`;
       const cached = cache.get(key);
@@ -47,9 +47,9 @@ export function getProvider(pluginParams: ctxParamsType): TranslationProvider {
   }
 
   if (vendor === 'deepl') {
-    const apiKey = '';
-    const useFreeToggle = (pluginParams as any).deeplUseFree === true;
-    const endpointSetting = (pluginParams as any).deeplEndpoint || 'auto';
+    const apiKey = pluginParams.deeplApiKey ?? '';
+    const useFreeToggle = pluginParams.deeplUseFree === true;
+    const endpointSetting = pluginParams.deeplEndpoint ?? 'auto';
     // Resolve endpoint: honor explicit setting; otherwise decide based on toggle or key suffix (:fx = Free)
     const shouldUseFree = endpointSetting === 'free'
       ? true
@@ -57,12 +57,11 @@ export function getProvider(pluginParams: ctxParamsType): TranslationProvider {
       ? false
       : (useFreeToggle || /:fx\b/i.test(apiKey));
     const baseUrl = shouldUseFree ? 'https://api-free.deepl.com' : 'https://api.deepl.com';
-    const proxyUrl = (pluginParams as any).deeplProxyUrl || '';
-    if (proxyUrl) {
-      const key = `deepl:${apiKey}:${baseUrl}:${proxyUrl}`;
+    if (apiKey) {
+      const key = `deepl:${apiKey}:${baseUrl}`;
       const cached = cache.get(key);
       if (cached) return cached;
-      const provider = new DeepLProvider({ apiKey, baseUrl, proxyUrl: proxyUrl || undefined });
+      const provider = new DeepLProvider({ apiKey, baseUrl });
       cache.set(key, provider);
       return provider;
     }
@@ -77,4 +76,26 @@ export function getProvider(pluginParams: ctxParamsType): TranslationProvider {
   const provider = new OpenAIProvider({ apiKey, model });
   cache.set(key, provider);
   return provider;
+}
+
+/**
+ * Checks if credentials are properly configured for the selected vendor.
+ * Used to determine if the plugin is ready to perform translations.
+ *
+ * @param pluginParams - Configuration captured from the settings screen.
+ * @returns True if the selected vendor has valid credentials configured.
+ */
+export function isProviderConfigured(pluginParams: ctxParamsType): boolean {
+  const vendor = pluginParams.vendor ?? 'openai';
+  switch (vendor) {
+    case 'google':
+      return !!pluginParams.googleApiKey && !!pluginParams.geminiModel;
+    case 'anthropic':
+      return !!pluginParams.anthropicApiKey && !!pluginParams.anthropicModel;
+    case 'deepl':
+      return !!pluginParams.deeplApiKey;
+    case 'openai':
+    default:
+      return !!pluginParams.apiKey && !!pluginParams.gptModel && pluginParams.gptModel !== 'None';
+  }
 }

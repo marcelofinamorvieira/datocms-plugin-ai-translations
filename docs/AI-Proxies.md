@@ -82,7 +82,7 @@ Testing from the plugin
 Notes
 -----
 
-- DeepL has a dedicated guide with a tailored proxy flow (CORS + server-side auth): see `docs/DeepL-Proxy-CLI.md`.
+- DeepL uses the built-in DatoCMS CORS proxy (`cors-proxy.datocms.com`) automatically, so no custom proxy setup is required. Simply provide your DeepL API key in the plugin settings.
 - For OpenAI, the plugin uses the official SDK when a proxy is set, with `baseURL` pointing at your proxy (`<Proxy>/v1`).
 - For Gemini and Anthropic, the plugin uses `fetch` when a proxy is set and targets the REST endpoints described above.
 

@@ -12,7 +12,7 @@
  * - Format localized SEO content for better user experience
  */
 
-import type { TranslationProvider } from './types';
+import type { TranslationProvider, StreamCallbacks } from './types';
 import { normalizeProviderError } from './ProviderErrors';
 import locale from 'locale-codes';
 import type { ctxParamsType } from '../../entrypoints/Config/ConfigScreen';
@@ -26,16 +26,6 @@ export interface SeoObject {
   description?: string;
   [key: string]: unknown;
 }
-
-/**
- * Interface for handling streaming translation updates.
- */
-type StreamCallbacks = {
-  onStream?: (chunk: string) => void;
-  onComplete?: () => void;
-  checkCancellation?: () => boolean;
-  abortSignal?: AbortSignal;
-};
 
 /**
  * Translates SEO field values while preserving their object structure

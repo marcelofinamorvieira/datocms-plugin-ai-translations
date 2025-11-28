@@ -8,19 +8,11 @@ import type { RenderConfigScreenCtx } from 'datocms-plugin-sdk';
 import {
   Button,
   Canvas,
-  CaretDownIcon,
-  CaretUpIcon,
-  Dropdown,
-  DropdownMenu,
-  DropdownOption,
   SelectField,
   Spinner,
   SwitchField,
-  TextField,
 } from 'datocms-react-ui';
 import s from '../styles.module.css';
-import DeepLProvider from '../../utils/translation/providers/DeepLProvider';
-import { normalizeProviderError } from '../../utils/translation/ProviderErrors';
 import { useEffect, useState, useMemo, useCallback } from 'react';
 import ReactTextareaAutosize from 'react-textarea-autosize';
 import { defaultPrompt } from '../../prompts/DefaultPrompt';
@@ -29,6 +21,13 @@ import { listRelevantOpenAIModels } from '../../utils/translation/OpenAIModels';
 import { listRelevantGeminiModels } from '../../utils/translation/GeminiModels';
 import { listRelevantAnthropicModels } from '../../utils/translation/AnthropicModels';
 
+// Vendor configuration components
+import OpenAIConfig from './VendorConfigs/OpenAIConfig';
+import GeminiConfig from './VendorConfigs/GeminiConfig';
+import AnthropicConfig from './VendorConfigs/AnthropicConfig';
+import DeepLConfig from './VendorConfigs/DeepLConfig';
+import ExclusionRulesSection from './ExclusionRulesSection';
+
 /**
  * The shape of the plugin parameters we store in DatoCMS.
  * These fields are updated on the plugin configuration screen
@@ -36,7 +35,7 @@ import { listRelevantAnthropicModels } from '../../utils/translation/AnthropicMo
  */
 export type ctxParamsType = {
   // Vendor selection and credentials
-  vendor?: 'openai' | 'google' | 'anthropic';
+  vendor?: 'openai' | 'google' | 'anthropic' | 'deepl';
   gptModel: string; // The GPT model used for translations (OpenAI)
   apiKey: string; // The API key used to authenticate with OpenAI
   // Google (Gemini) settings
@@ -46,6 +45,7 @@ export type ctxParamsType = {
   anthropicApiKey?: string;
   anthropicModel?: string;
   // DeepL settings
+  deeplApiKey?: string;
   deeplEndpoint?: 'auto'|'pro'|'free';
   deeplUseFree?: boolean;
   deeplFormality?: 'default'|'more'|'less';
@@ -53,7 +53,6 @@ export type ctxParamsType = {
   deeplIgnoreTags?: string;
   deeplNonSplittingTags?: string;
   deeplSplittingTags?: string;
-  deeplProxyUrl?: string;
   // DeepL glossary settings
   deeplGlossaryId?: string; // default glossary id (optional)
   deeplGlossaryPairs?: string; // per-pair mapping text (optional)
@@ -92,106 +91,52 @@ export const modularContentVariations = ['framed_single_block'];
  *
  * @param apiKey - Your OpenAI API key
  * @param setOptions - Callback to set the retrieved models in state
+ * @param setGptModel - Callback to set the selected model (auto-selects first if none set)
+ * @param currentModel - The currently selected model
  */
 async function fetchAvailableModels(
   apiKey: string,
   setOptions: React.Dispatch<React.SetStateAction<string[]>>,
   setGptModel: React.Dispatch<React.SetStateAction<string>>,
-  setRecommended: React.Dispatch<React.SetStateAction<string | null>>
+  currentModel: string
 ) {
   try {
     const models = await listRelevantOpenAIModels(apiKey);
     setOptions(models.length > 0 ? models : ['No compatible models found']);
-
-    // Recommend gpt‑4.1‑mini (fast & broadly available), then 4o‑mini, then 4.1
-    const prefer41Mini = models.find((m) => /^gpt-4\.1(\b|[.-])/.test(m) && /(^|[.-])mini\b/i.test(m));
-    const prefer4oMini = models.find((m) => /^gpt-4o(\b|[.-])/.test(m) && /(^|[.-])mini\b/i.test(m));
-    const prefer41 = models.find((m) => /^gpt-4\.1(\b|[.-])/.test(m));
-    const preferAnyMini = models.find((m) => /(^|[.-])mini\b/i.test(m) && !/^gpt-5(\b|[.-])/.test(m));
-    const recommended = prefer41Mini || prefer4oMini || prefer41 || preferAnyMini || models[0] || null;
-    setRecommended(recommended);
+    // Auto-select first model if none currently selected
+    if (models.length > 0 && (currentModel === 'None' || !currentModel)) {
+      setGptModel(models[0]);
+    }
   } catch (error) {
     console.error('Error fetching OpenAI models:', error);
     setOptions(['Invalid API Key']);
     setGptModel('None');
-    setRecommended(null);
   }
 }
+
+/**
+ * Parameters for the updatePluginParams function.
+ */
+type UpdatePluginParamsArgs = {
+  ctx: RenderConfigScreenCtx;
+  params: Partial<ctxParamsType>;
+  setIsLoading: React.Dispatch<React.SetStateAction<boolean>>;
+};
 
 /**
  * Persists the updated plugin parameters to DatoCMS.
  * If successful, displays a success message; otherwise, alerts the user of an error.
  *
- * @param ctx - The DatoCMS render context
- * @param apiKey - The new OpenAI API key
- * @param gptModel - The chosen GPT model
- * @param translationFields - The field types that can be translated
- * @param translateWholeRecord - Whether entire record translation is allowed
- * @param prompt - User-defined or default translation prompt
- * @param modelsToBeExcludedFromThisPlugin - List of model API keys to exclude from translation
- * @param rolesToBeExcludedFromThisPlugin - List of role IDs to exclude from translation
- * @param apiKeysToBeExcludedFromThisPlugin - List of API keys to exclude from translation
- * @param setIsLoading - Toggles the local loading state
+ * @param args - Object containing ctx, params, and setIsLoading
  */
-const updatePluginParams = async (
-  ctx: RenderConfigScreenCtx,
-  vendor: 'openai' | 'google' | 'anthropic' | 'deepl',
-  apiKey: string,
-  gptModel: string,
-  googleApiKey: string,
-  geminiModel: string,
-  anthropicApiKey: string,
-  anthropicModel: string,
-  deeplEndpoint: 'auto'|'pro'|'free',
-  deeplUseFree: boolean,
-  deeplFormality: 'default'|'more'|'less',
-  deeplPreserveFormatting: boolean,
-  deeplIgnoreTags: string,
-  deeplNonSplittingTags: string,
-  deeplSplittingTags: string,
-  deeplProxyUrl: string,
-  deeplGlossaryId: string,
-  deeplGlossaryPairs: string,
-  translationFields: string[],
-  translateWholeRecord: boolean,
-  translateBulkRecords: boolean,
-  prompt: string,
-  modelsToBeExcludedFromThisPlugin: string[],
-  rolesToBeExcludedFromThisPlugin: string[],
-  apiKeysToBeExcludedFromThisPlugin: string[],
-  setIsLoading: React.Dispatch<React.SetStateAction<boolean>>,
-  enableDebugging: boolean
-) => {
+const updatePluginParams = async ({
+  ctx,
+  params,
+  setIsLoading,
+}: UpdatePluginParamsArgs) => {
   setIsLoading(true);
   try {
-    await ctx.updatePluginParameters({
-      vendor,
-      apiKey,
-      gptModel,
-      googleApiKey,
-      geminiModel,
-      anthropicApiKey,
-      anthropicModel,
-      deeplEndpoint,
-      deeplUseFree,
-      deeplFormality,
-      deeplPreserveFormatting,
-      deeplIgnoreTags,
-      deeplNonSplittingTags,
-      deeplSplittingTags,
-      deeplProxyUrl,
-      deeplGlossaryId,
-      deeplGlossaryPairs,
-      translationFields,
-      translateWholeRecord,
-      translateBulkRecords,
-      prompt,
-      modelsToBeExcludedFromThisPlugin,
-      rolesToBeExcludedFromThisPlugin,
-      apiKeysToBeExcludedFromThisPlugin,
-      enableDebugging,
-    });
-
+    await ctx.updatePluginParameters(params);
     ctx.notice('Plugin options updated successfully!');
   } catch (error) {
     console.error('Error updating plugin parameters:', error);
@@ -230,13 +175,9 @@ export default function ConfigScreen({ ctx }: { ctx: RenderConfigScreenCtx }) {
   const [deeplIgnoreTags, setDeeplIgnoreTags] = useState<string>(pluginParams.deeplIgnoreTags ?? 'notranslate,ph');
   const [deeplNonSplittingTags, setDeeplNonSplittingTags] = useState<string>(pluginParams.deeplNonSplittingTags ?? 'a,code,pre,strong,em,ph,notranslate');
   const [deeplSplittingTags, setDeeplSplittingTags] = useState<string>(pluginParams.deeplSplittingTags ?? '');
-  const [deeplProxyUrl, setDeeplProxyUrl] = useState<string>(pluginParams.deeplProxyUrl ?? '');
+  const [deeplApiKey, setDeeplApiKey] = useState<string>(pluginParams.deeplApiKey ?? '');
   const [deeplGlossaryId, setDeeplGlossaryId] = useState<string>(pluginParams.deeplGlossaryId ?? '');
   const [deeplGlossaryPairs, setDeeplGlossaryPairs] = useState<string>(pluginParams.deeplGlossaryPairs ?? '');
-  const [showDeeplAdvanced, setShowDeeplAdvanced] = useState<boolean>(false);
-  const [isTestingProxy, setIsTestingProxy] = useState<boolean>(false);
-  const [testProxyMessage, setTestProxyMessage] = useState<string>('');
-  const [testProxyStatus, setTestProxyStatus] = useState<'idle'|'success'|'error'>('idle');
 
   // Local state for which field types can be translated
   const [translationFields, setTranslationFields] = useState<string[]>(
@@ -294,12 +235,8 @@ export default function ConfigScreen({ ctx }: { ctx: RenderConfigScreenCtx }) {
     'Insert a valid OpenAI API Key',
   ]);
 
-  // Top recommended model (first in the filtered/sorted list)
-  const [recommendedModel, setRecommendedModel] = useState<string | null>(null);
   const [listOfGeminiModels, setListOfGeminiModels] = useState<string[]>(['Insert a valid Google API Key']);
-  const [recommendedGeminiModel, setRecommendedGeminiModel] = useState<string | null>(null);
   const [listOfAnthropicModels, setListOfAnthropicModels] = useState<string[]>(['Insert a valid Anthropic API Key']);
-  const [recommendedAnthropicModel, setRecommendedAnthropicModel] = useState<string | null>(null);
 
   const [listOfFields, setListOfFields] = useState<
     {
@@ -370,13 +307,12 @@ export default function ConfigScreen({ ctx }: { ctx: RenderConfigScreenCtx }) {
         apiKey,
         setListOfModels,
         setGptModel,
-        setRecommendedModel
+        gptModel
       ).catch(console.error);
     } else {
       if (vendor === 'openai') {
         setListOfModels(['Insert a valid OpenAI API Key']);
         setGptModel('None');
-        setRecommendedModel(null);
       }
     }
   }, [apiKey, vendor]);
@@ -387,26 +323,18 @@ export default function ConfigScreen({ ctx }: { ctx: RenderConfigScreenCtx }) {
       if (vendor !== 'google') return;
       if (!googleApiKey) {
         setListOfGeminiModels(['Insert a valid Google API Key']);
-        setRecommendedGeminiModel(null);
         return;
       }
       try {
         const models = await listRelevantGeminiModels(googleApiKey);
         setListOfGeminiModels(models.length > 0 ? models : ['No compatible models found']);
-        // Prefer the latest flash as default recommendation
-        const prefer25Flash = models.find((m) => /^gemini-2\.5.*flash/i.test(m));
-        const prefer2Flash = models.find((m) => /^gemini-2\.0.*flash/i.test(m));
-        const prefer15Flash = models.find((m) => /^gemini-1\.5.*flash/i.test(m));
-        const recommended = prefer25Flash || prefer2Flash || prefer15Flash || models[0] || null;
-        setRecommendedGeminiModel(recommended);
-        // Auto-select when unset
-        if (!pluginParams.geminiModel && recommended) {
-          setGeminiModel(recommended);
+        // Auto-select first model if none currently selected
+        if (models.length > 0 && !pluginParams.geminiModel) {
+          setGeminiModel(models[0]);
         }
       } catch (e) {
         console.error('Error fetching Gemini models:', e);
         setListOfGeminiModels(['Invalid API Key']);
-        setRecommendedGeminiModel(null);
       }
     }
     loadGemini();
@@ -418,34 +346,22 @@ export default function ConfigScreen({ ctx }: { ctx: RenderConfigScreenCtx }) {
       if (vendor !== 'anthropic') return;
       if (!anthropicApiKey) {
         setListOfAnthropicModels(['Insert a valid Anthropic API Key']);
-        setRecommendedAnthropicModel(null);
         return;
       }
       try {
         const models = await listRelevantAnthropicModels(anthropicApiKey);
         setListOfAnthropicModels(models.length > 0 ? models : ['No compatible models found']);
-        const preferHaiku = models.find((m) => /haiku/i.test(m) && /3\.5|latest/i.test(m));
-        const preferSonnet = models.find((m) => /sonnet/i.test(m) && /3\.5|latest/i.test(m));
-        const recommended = preferHaiku || preferSonnet || models[0] || null;
-        setRecommendedAnthropicModel(recommended);
-        if (!pluginParams.anthropicModel && recommended) setAnthropicModel(recommended);
+        // Auto-select first model if none currently selected
+        if (models.length > 0 && !pluginParams.anthropicModel) {
+          setAnthropicModel(models[0]);
+        }
       } catch (e) {
         console.error('Error fetching Claude models:', e);
         setListOfAnthropicModels(['Invalid API Key']);
-        setRecommendedAnthropicModel(null);
       }
     }
     loadClaude();
   }, [vendor, anthropicApiKey, pluginParams.anthropicModel]);
-
-  // If we detect a recommended model and the current selection is unset or None,
-  // adopt the recommendation automatically.
-  useEffect(() => {
-    if (vendor === 'openai' && recommendedModel && (gptModel === 'None' || !pluginParams.gptModel)) {
-      setGptModel(recommendedModel);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [recommendedModel]);
 
   const normalizeList = useCallback((list?: string[]) => {
     return Array.isArray(list) ? [...list].sort().join(',') : '';
@@ -482,7 +398,7 @@ export default function ConfigScreen({ ctx }: { ctx: RenderConfigScreenCtx }) {
     deeplIgnoreTags !== (pluginParams.deeplIgnoreTags ?? 'notranslate,ph') ||
     deeplNonSplittingTags !== (pluginParams.deeplNonSplittingTags ?? 'a,code,pre,strong,em,ph,notranslate') ||
     deeplSplittingTags !== (pluginParams.deeplSplittingTags ?? '') ||
-    deeplProxyUrl !== (pluginParams.deeplProxyUrl ?? '') ||
+    deeplApiKey !== (pluginParams.deeplApiKey ?? '') ||
     deeplGlossaryId !== (pluginParams.deeplGlossaryId ?? '') ||
     deeplGlossaryPairs !== (pluginParams.deeplGlossaryPairs ?? '') ||
       gptModel !== (pluginParams.gptModel ?? 'None') ||
@@ -514,7 +430,7 @@ export default function ConfigScreen({ ctx }: { ctx: RenderConfigScreenCtx }) {
     deeplIgnoreTags,
     deeplNonSplittingTags,
     deeplSplittingTags,
-    deeplProxyUrl,
+    deeplApiKey,
     modelsToBeExcluded,
     rolesToBeExcluded,
     apiKeysToBeExcluded,
@@ -533,7 +449,7 @@ export default function ConfigScreen({ ctx }: { ctx: RenderConfigScreenCtx }) {
     pluginParams.deeplIgnoreTags,
     pluginParams.deeplNonSplittingTags,
     pluginParams.deeplSplittingTags,
-    pluginParams.deeplProxyUrl,
+    pluginParams.deeplApiKey,
     pluginParams.deeplGlossaryId,
     pluginParams.deeplGlossaryPairs,
     pluginParams.gptModel,
@@ -595,357 +511,50 @@ export default function ConfigScreen({ ctx }: { ctx: RenderConfigScreenCtx }) {
         </div>
 
         {vendor === 'openai' ? (
-          <>
-            {/* OpenAI API Key */}
-            <div className={s.fieldSpacing}>
-              <TextField
-                required
-                name="openAIAPIKey"
-                id="openAIAPIKey"
-                label="OpenAI API Key"
-                value={apiKey}
-                onChange={(newValue) => setApiKey(newValue)}
-                placeholder="sk-..."
-              />
-            </div>
-
-            {/* GPT Model dropdown selector */}
-            <div className={s.dropdownLabel}>
-              <span className={s.label}>GPT Model*</span>
-              <span className={s.tooltipContainer}>
-                ⓘ
-                <span className={`${s.tooltipText} ${s.leftAnchorTooltip}`}>
-                  <div style={{ textAlign: 'left' }}>
-                    <div><b>Default:</b> gpt-4.1-mini — fastest and broadly available.</div>
-                    <div><b>High-stakes short copy:</b> gpt-4.1</div>
-                    <div><b>Large or budget batches:</b> gpt-4o-mini</div>
-                  </div>
-                </span>
-              </span>
-              <div className={s.modelSelect}>
-                <Dropdown
-                  renderTrigger={({ open, onClick }) => (
-                    <Button
-                      onClick={onClick}
-                      rightIcon={open ? <CaretUpIcon /> : <CaretDownIcon />}
-                    >
-                      {gptModel}
-                    </Button>
-                  )}
-                >
-                  <DropdownMenu>
-                    {listOfModels.map((model) => (
-                      <DropdownOption key={model} onClick={() => setGptModel(model)}>
-                        {model}
-                      </DropdownOption>
-                    ))}
-                  </DropdownMenu>
-                </Dropdown>
-                <button
-                  onClick={() => {
-                    if (recommendedModel) {
-                      setGptModel(recommendedModel);
-                      ctx.notice(`Selected ${recommendedModel}`);
-                    }
-                  }}
-                  className={s.tooltipConfig}
-                  type="button"
-                  disabled={!recommendedModel}
-                >
-                  {recommendedModel
-                    ? `Recommended: ${recommendedModel}`
-                    : 'No compatible models detected'}
-                </button>
-              </div>
-            </div>
-          </>
+          <OpenAIConfig
+            apiKey={apiKey}
+            setApiKey={setApiKey}
+            gptModel={gptModel}
+            setGptModel={setGptModel}
+            listOfModels={listOfModels}
+          />
         ) : vendor === 'google' ? (
-          <>
-            {/* Google API Key */}
-            <div className={s.fieldSpacing}>
-              <TextField
-                required
-                name="googleApiKey"
-                id="googleApiKey"
-                label="Google API Key"
-                value={googleApiKey}
-                onChange={(newValue) => setGoogleApiKey(newValue)}
-                placeholder="AIza..."
-              />
-            </div>
-
-            {/* Gemini model select */}
-            <div className={s.dropdownLabel}>
-              <span className={s.label}>Gemini Model*</span>
-              <span className={s.tooltipContainer}>
-                ⓘ
-                <span className={`${s.tooltipText} ${s.leftAnchorTooltip}`}>
-                  <div style={{ textAlign: 'left' }}>
-                    <div><b>Default:</b> gemini-2.5-flash — best balance of quality/cost/latency.</div>
-                    <div><b>High-stakes short copy:</b> gemini-2.5-pro (or 2.0-pro).</div>
-                    <div><b>Large or budget batches:</b> gemini-2.5-flash-lite.</div>
-                  </div>
-                </span>
-              </span>
-              <div className={s.modelSelect}>
-                <SelectField
-                  name="geminiModel"
-                  id="geminiModel"
-                  label=""
-                  value={{ label: geminiModel, value: geminiModel }}
-                  selectInputProps={{ options: listOfGeminiModels.map((m) => ({ label: m, value: m })) }}
-                  onChange={(newValue) => {
-                    if (!Array.isArray(newValue)) setGeminiModel((newValue as any)?.value || geminiModel);
-                  }}
-                />
-                <button
-                  onClick={() => {
-                    if (recommendedGeminiModel) {
-                      setGeminiModel(recommendedGeminiModel);
-                      ctx.notice(`Selected ${recommendedGeminiModel}`);
-                    }
-                  }}
-                  className={s.tooltipConfig}
-                  type="button"
-                  disabled={!recommendedGeminiModel}
-                >
-                  {recommendedGeminiModel ? `Recommended: ${recommendedGeminiModel}` : 'No compatible models detected'}
-                </button>
-              </div>
-            </div>
-          </>
+          <GeminiConfig
+            googleApiKey={googleApiKey}
+            setGoogleApiKey={setGoogleApiKey}
+            geminiModel={geminiModel}
+            setGeminiModel={setGeminiModel}
+            listOfGeminiModels={listOfGeminiModels}
+          />
         ) : vendor === 'anthropic' ? (
-          <>
-            {/* Anthropic API Key */}
-            <div className={s.fieldSpacing}>
-              <TextField
-                required
-                name="anthropicApiKey"
-                id="anthropicApiKey"
-                label="Anthropic API Key"
-                value={anthropicApiKey}
-                onChange={(v) => setAnthropicApiKey(v)}
-                placeholder="sk-ant-..."
-              />
-            </div>
-
-            {/* Claude Model */}
-            <SelectField
-              name="anthropicModel"
-              id="anthropicModel"
-              label="Claude Model"
-              hint={recommendedAnthropicModel ? `Recommended: ${recommendedAnthropicModel}` : undefined}
-              value={{ label: anthropicModel, value: anthropicModel }}
-              selectInputProps={{ options: listOfAnthropicModels.map((m) => ({ label: m, value: m })) }}
-              onChange={(newValue) => {
-                if (!Array.isArray(newValue)) setAnthropicModel((newValue as any)?.value || anthropicModel);
-              }}
-            />
-          </>
+          <AnthropicConfig
+            anthropicApiKey={anthropicApiKey}
+            setAnthropicApiKey={setAnthropicApiKey}
+            anthropicModel={anthropicModel}
+            setAnthropicModel={setAnthropicModel}
+            listOfAnthropicModels={listOfAnthropicModels}
+          />
         ) : (
-          <>
-            {/* Proxy URL (REQUIRED) with tooltip explaining CORS */}
-            <div className={s.fieldSpacing}>
-              <label className={s.label} htmlFor="deeplProxyUrl" style={{ display: 'flex', alignItems: 'center' }}>
-                Proxy URL*
-                <div className={s.tooltipContainer}>
-                  ⓘ
-                  <div className={`${s.tooltipText} ${s.leftAnchorTooltip}`}>
-                    DeepL blocks browser requests (no CORS). Use a tiny serverless
-                    endpoint you control (e.g., Vercel/Netlify/Cloudflare) that forwards
-                    requests to DeepL and adds CORS + the Authorization header server‑side.
-                    Paste that endpoint URL here.
-                  </div>
-                </div>
-              </label>
-              <TextField
-                name="deeplProxyUrl"
-                id="deeplProxyUrl"
-                label=""
-                value={deeplProxyUrl}
-                onChange={setDeeplProxyUrl}
-                placeholder="https://yourdomain.com/api/deepl"
-              />
-              <div className={`${s.switchField} ${s.buttonRow}`}>
-                <Button
-                  buttonType="muted"
-                  onClick={() => {
-                    const url = 'https://github.com/marcelofinamorvieira/datocms-plugin-ai-translations/blob/master/docs/DeepL-Proxy-CLI.md';
-                    try { window.open(url, '_blank', 'noopener'); } catch { ctx.notice('Open this URL: ' + url); }
-                  }}
-                >
-                  How to set up this proxy
-                </Button>
-                <Button
-                  buttonType="muted"
-                  disabled={isTestingProxy}
-                  onClick={async () => {
-                    if (!deeplProxyUrl) { setTestProxyStatus('error'); setTestProxyMessage('Enter a Proxy URL first.'); return; }
-                    setTestProxyMessage('');
-                    setTestProxyStatus('idle');
-                    setIsTestingProxy(true);
-                    try {
-                      const base = deeplUseFree ? 'https://api-free.deepl.com' : 'https://api.deepl.com';
-                      const provider = new DeepLProvider({ apiKey: '', baseUrl: base, proxyUrl: deeplProxyUrl });
-                      const out = await provider.translateArray(['Hello world'], { targetLang: 'DE' });
-                      const sample = (out?.[0] ?? '').toString();
-                      if (sample) {
-                        setTestProxyStatus('success');
-                        setTestProxyMessage(`Proxy OK. DeepL responded: ${sample.slice(0, 64)}${sample.length > 64 ? '…' : ''}`);
-                      } else {
-                        setTestProxyStatus('success');
-                        setTestProxyMessage('Proxy OK. DeepL responded (empty body).');
-                      }
-                    } catch (err) {
-                      const norm = normalizeProviderError(err, 'deepl');
-                      setTestProxyStatus('error');
-                      setTestProxyMessage(norm.message + (norm.hint ? ` — ${norm.hint}` : ''));
-                    } finally {
-                      setIsTestingProxy(false);
-                    }
-                  }}
-                >
-                  {isTestingProxy ? 'Testing…' : 'Test proxy'}
-                </Button>
-              </div>
-              {testProxyMessage && (
-                <div
-                  className={s.inlineStatus}
-                  style={{ color: testProxyStatus === 'success' ? '#237804' : testProxyStatus === 'error' ? '#cf1322' : undefined }}
-                >
-                  {testProxyMessage}
-                </div>
-              )}
-              
-            </div>
-
-            {/* DeepL Endpoint toggle + Formality */}
-            <div className={s.switchField}>
-              <SwitchField
-                name="deeplUseFree"
-                id="deeplUseFree"
-                label="Use DeepL Free endpoint (api-free.deepl.com)"
-                value={deeplUseFree}
-                onChange={(val) => setDeeplUseFree(val)}
-              />
-            </div>
-
-            <div className={s.fieldSpacing}>
-              <label className={s.label} htmlFor="deeplFormality">Formality</label>
-              <SelectField
-                name="deeplFormality"
-                id="deeplFormality"
-                label=""
-                value={{ label: deeplFormality, value: deeplFormality }}
-                selectInputProps={{
-                  options: [
-                    { label: 'default', value: 'default' },
-                    { label: 'more', value: 'more' },
-                    { label: 'less', value: 'less' },
-                  ],
-                }}
-                onChange={(nv) => { if (!Array.isArray(nv)) setDeeplFormality((nv as any).value); }}
-              />
-            </div>
-
-            {/* Advanced settings toggle */}
-            <div className={s.switchField}>
-              <Button buttonType="muted" onClick={() => setShowDeeplAdvanced((v) => !v)}>
-                {showDeeplAdvanced ? 'Hide advanced settings' : 'Show advanced settings'}
-              </Button>
-            </div>
-
-            {showDeeplAdvanced && (
-              <div style={{ marginTop: 8 }}>
-                {/* Preserve formatting */}
-                <div className={s.switchField}>
-                  <SwitchField
-                    name="deeplPreserveFormatting"
-                    id="deeplPreserveFormatting"
-                    label="Preserve formatting"
-                    value={deeplPreserveFormatting}
-                    onChange={setDeeplPreserveFormatting}
-                  />
-                </div>
-
-                {/* Advanced tags */}
-                <div className={s.fieldSpacing}>
-                  <TextField
-                    name="deeplIgnoreTags"
-                    id="deeplIgnoreTags"
-                    label="Ignore tags (CSV)"
-                    value={deeplIgnoreTags}
-                    onChange={setDeeplIgnoreTags}
-                  />
-                </div>
-                <div className={s.fieldSpacing}>
-                  <TextField
-                    name="deeplNonSplittingTags"
-                    id="deeplNonSplittingTags"
-                    label="Non-splitting tags (CSV)"
-                    value={deeplNonSplittingTags}
-                    onChange={setDeeplNonSplittingTags}
-                  />
-                </div>
-                <div className={s.fieldSpacing}>
-                  <TextField
-                    name="deeplSplittingTags"
-                    id="deeplSplittingTags"
-                    label="Splitting tags (CSV)"
-                    value={deeplSplittingTags}
-                    onChange={setDeeplSplittingTags}
-                  />
-                </div>
-
-                {/* Glossary settings */}
-                <div className={s.fieldSpacing}>
-                  <label className={s.label} htmlFor="deeplGlossaryId" style={{ display: 'flex', alignItems: 'center' }}>
-                    Default glossary ID
-                    <div className={s.tooltipContainer}>
-                      ⓘ
-                      <div className={`${s.tooltipText} ${s.leftAnchorTooltip}`}>
-                        Optional DeepL glossary ID (e.g., gls-abc123) applied when
-                        translating with DeepL. You can override per language pair
-                        via the mapping below.
-                      </div>
-                    </div>
-                  </label>
-                  <TextField
-                    name="deeplGlossaryId"
-                    id="deeplGlossaryId"
-                    label=""
-                    value={deeplGlossaryId}
-                    onChange={setDeeplGlossaryId}
-                    placeholder="gls-..."
-                  />
-                </div>
-
-                <div className={s.fieldSpacing}>
-                  <label className={s.label} htmlFor="deeplGlossaryPairs" style={{ display: 'flex', alignItems: 'center' }}>
-                    Glossaries by language pair
-                    <div className={s.tooltipContainer}>
-                      ⓘ
-                      <div className={`${s.tooltipText} ${s.leftAnchorTooltip}`}>
-                        One per line. Use either Dato locales or DeepL codes.
-                        Supports wildcards, e.g. *-&gt;pt-BR=gls-123 (any source to pt-BR).
-                        Examples: EN-&gt;DE=gls-abc123, en-US-&gt;pt-BR: gls-xyz789, *-&gt;de=gls-777
-                      </div>
-                    </div>
-                  </label>
-                  <ReactTextareaAutosize
-                    className={s.textarea}
-                    id="deeplGlossaryPairs"
-                    value={deeplGlossaryPairs}
-                    onChange={(e) => setDeeplGlossaryPairs(e.target.value)}
-                    minRows={2}
-                    placeholder={"EN->DE=gls-...\nen-US->pt-BR=gls-..."}
-                  />
-                </div>
-
-                {/* Proxy moved to required field above */}
-              </div>
-            )}
-          </>
+          <DeepLConfig
+            deeplApiKey={deeplApiKey}
+            setDeeplApiKey={setDeeplApiKey}
+            deeplUseFree={deeplUseFree}
+            setDeeplUseFree={setDeeplUseFree}
+            deeplFormality={deeplFormality}
+            setDeeplFormality={setDeeplFormality}
+            deeplPreserveFormatting={deeplPreserveFormatting}
+            setDeeplPreserveFormatting={setDeeplPreserveFormatting}
+            deeplIgnoreTags={deeplIgnoreTags}
+            setDeeplIgnoreTags={setDeeplIgnoreTags}
+            deeplNonSplittingTags={deeplNonSplittingTags}
+            setDeeplNonSplittingTags={setDeeplNonSplittingTags}
+            deeplSplittingTags={deeplSplittingTags}
+            setDeeplSplittingTags={setDeeplSplittingTags}
+            deeplGlossaryId={deeplGlossaryId}
+            setDeeplGlossaryId={setDeeplGlossaryId}
+            deeplGlossaryPairs={deeplGlossaryPairs}
+            setDeeplGlossaryPairs={setDeeplGlossaryPairs}
+          />
         )}
 
         {/* Performance: concurrency is automatic with adaptive backoff */}
@@ -1047,114 +656,21 @@ export default function ConfigScreen({ ctx }: { ctx: RenderConfigScreenCtx }) {
           </div>
         </div>
 
-        {/* Switch field to toggle exclusion rules visibility */}
-        <div
-          className={s.switchField}
-          style={{ display: 'flex', alignItems: 'center' }}
-        >
-          <SwitchField
-            name="showExclusionRules"
-            id="showExclusionRules"
-            label="Show exclusion rules"
-            value={showExclusionRules}
-            onChange={(newValue) => setShowExclusionRules(newValue)}
-          />
-          {hasExclusionRules && (
-            <div className={s.warningTooltip}>
-              ⓘ
-              <div className={s.tooltipText}>
-                There are exclusion rules present. If the plugin is not being
-                displayed in a model or field where you expect it, please review
-                them.
-              </div>
-            </div>
-          )}
-        </div>
-
-        {showExclusionRules && (
-          <div className={s.exclusionRules}>
-            <div style={{ marginTop: '16px' }}>
-              <SelectField
-                name="modelsToBeExcludedFromTranslation"
-                id="modelsToBeExcludedFromTranslation"
-                label="Models to be excluded from this plugin"
-                value={modelsToBeExcluded.map((modelKey) => {
-                  const model = availableModels.find(
-                    (m) => m.apiKey === modelKey
-                  );
-                  return {
-                    label: model?.name ?? modelKey,
-                    value: modelKey,
-                  };
-                })}
-                selectInputProps={{
-                  isMulti: true,
-                  options: availableModels.map((model) => ({
-                    label: model.name ?? '',
-                    value: model.apiKey ?? '',
-                  })),
-                }}
-                onChange={(newValue) => {
-                  const selectedModels = newValue.map((v) => v.value);
-                  setModelsToBeExcluded(selectedModels);
-                }}
-              />
-            </div>
-
-            <div style={{ marginTop: '16px' }}>
-              <SelectField
-                name="rolesToBeExcludedFromTranslation"
-                id="rolesToBeExcludedFromTranslation"
-                label="Roles to be excluded from using this plugin"
-                value={rolesToBeExcluded.map((roleId) => {
-                  const role = roles.find((r) => r.id === roleId);
-                  return {
-                    label: role?.name ?? roleId,
-                    value: roleId,
-                  };
-                })}
-                selectInputProps={{
-                  isMulti: true,
-                  options: roles.map((role) => ({
-                    label: role.name ?? '',
-                    value: role.id ?? '',
-                  })),
-                }}
-                onChange={(newValue) => {
-                  const selectedRoles = newValue.map((v) => v.value);
-                  setRolesToBeExcluded(selectedRoles);
-                }}
-              />
-            </div>
-
-            <div style={{ marginTop: '16px' }}>
-              <SelectField
-                name="apiKeysToBeExcludedFromTranslation"
-                id="apiKeysToBeExcludedFromTranslation"
-                label="Field API keys to be excluded from using this plugin"
-                value={apiKeysToBeExcluded.map((apiKey) => ({
-                  label: `${
-                    listOfFields.find((field) => field.id === apiKey)?.name
-                  } (${
-                    listOfFields.find((field) => field.id === apiKey)?.model
-                  })`,
-                  value: apiKey,
-                }))}
-                selectInputProps={{
-                  isMulti: true,
-                  options: listOfFields.map((field) => ({
-                    label: `${field.name} (${field.model})`,
-                    value: field.id,
-                  })),
-                }}
-                onChange={(newValue) => {
-                  const selectedApiKeys = newValue.map((v) => v.value);
-                  setApiKeysToBeExcluded(selectedApiKeys);
-                }}
-              />
-            </div>
-          </div>
-        )}
+        {/* Exclusion rules section */}
+        <ExclusionRulesSection
+          showExclusionRules={showExclusionRules}
+          setShowExclusionRules={setShowExclusionRules}
+          hasExclusionRules={hasExclusionRules}
+          modelsToBeExcluded={modelsToBeExcluded}
+          setModelsToBeExcluded={setModelsToBeExcluded}
+          rolesToBeExcluded={rolesToBeExcluded}
+          setRolesToBeExcluded={setRolesToBeExcluded}
+          apiKeysToBeExcluded={apiKeysToBeExcluded}
+          setApiKeysToBeExcluded={setApiKeysToBeExcluded}
+          availableModels={availableModels}
+          roles={roles}
+          listOfFields={listOfFields}
+        />
 
         {/* Prompt input is not applicable to DeepL; hide for that vendor */}
         {vendor !== 'deepl' && (
@@ -1195,7 +711,7 @@ export default function ConfigScreen({ ctx }: { ctx: RenderConfigScreenCtx }) {
               (vendor === 'openai' && (gptModel === 'None' || !apiKey)) ||
               (vendor === 'google' && (!googleApiKey || !geminiModel)) ||
               (vendor === 'anthropic' && (!anthropicApiKey || !anthropicModel)) ||
-              (vendor === 'deepl' && (!deeplProxyUrl)) ||
+              (vendor === 'deepl' && (!deeplApiKey)) ||
               ([...translationFields].sort().join(',') ===
                 Object.keys(translateFieldTypes).sort().join(',') &&
                 translateWholeRecord === true &&
@@ -1208,7 +724,9 @@ export default function ConfigScreen({ ctx }: { ctx: RenderConfigScreenCtx }) {
             buttonType="muted"
             onClick={() => {
               setVendor('openai');
-              setGptModel(recommendedModel ?? 'gpt-4.1-mini');
+              // Use first available model if list is loaded, otherwise fallback
+              const firstModel = listOfModels[0];
+              setGptModel(firstModel && firstModel !== 'Insert a valid OpenAI API Key' && firstModel !== 'Invalid API Key' ? firstModel : 'None');
               setTranslationFields(Object.keys(translateFieldTypes));
               setTranslateWholeRecord(true);
               setTranslateBulkRecords(true);
@@ -1228,35 +746,37 @@ export default function ConfigScreen({ ctx }: { ctx: RenderConfigScreenCtx }) {
             fullWidth
             buttonType="primary"
             onClick={() =>
-              updatePluginParams(
+              updatePluginParams({
                 ctx,
-                vendor,
-                apiKey,
-                gptModel,
-                googleApiKey,
-                geminiModel,
-                anthropicApiKey,
-                anthropicModel,
-                deeplEndpoint,
-                deeplUseFree,
-                deeplFormality,
-                deeplPreserveFormatting,
-                deeplIgnoreTags,
-                deeplNonSplittingTags,
-                deeplSplittingTags,
-                deeplProxyUrl,
-                deeplGlossaryId,
-                deeplGlossaryPairs,
-                translationFields,
-                translateWholeRecord,
-                translateBulkRecords,
-                prompt,
-                modelsToBeExcluded,
-                rolesToBeExcluded,
-                apiKeysToBeExcluded,
+                params: {
+                  vendor,
+                  apiKey,
+                  gptModel,
+                  googleApiKey,
+                  geminiModel,
+                  anthropicApiKey,
+                  anthropicModel,
+                  deeplApiKey,
+                  deeplEndpoint,
+                  deeplUseFree,
+                  deeplFormality,
+                  deeplPreserveFormatting,
+                  deeplIgnoreTags,
+                  deeplNonSplittingTags,
+                  deeplSplittingTags,
+                  deeplGlossaryId,
+                  deeplGlossaryPairs,
+                  translationFields,
+                  translateWholeRecord,
+                  translateBulkRecords,
+                  prompt,
+                  modelsToBeExcludedFromThisPlugin: modelsToBeExcluded,
+                  rolesToBeExcludedFromThisPlugin: rolesToBeExcluded,
+                  apiKeysToBeExcludedFromThisPlugin: apiKeysToBeExcluded,
+                  enableDebugging,
+                },
                 setIsLoading,
-                enableDebugging
-              )
+              })
             }
           >
             {isLoading ? 'Saving...' : 'Save'}

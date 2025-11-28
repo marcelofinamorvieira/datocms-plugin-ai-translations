@@ -12,7 +12,7 @@
  * - Handle streaming responses from the provider
  */
 
-import type { TranslationProvider } from './types';
+import type { TranslationProvider, StreamCallbacks } from './types';
 import { translateArray } from './translateArray';
 import { normalizeProviderError } from './ProviderErrors';
 import type { ctxParamsType } from '../../entrypoints/Config/ConfigScreen';
@@ -24,16 +24,6 @@ import {
   insertObjectAtIndex,
   removeIds
 } from './utils';
-
-/**
- * Callback interfaces for handling streaming responses.
- */
-type StreamCallbacks = {
-  onStream?: (chunk: string) => void;
-  onComplete?: () => void;
-  checkCancellation?: () => boolean;
-  abortSignal?: AbortSignal;
-};
 
 /**
  * Interface representing a structured text node from DatoCMS.

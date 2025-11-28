@@ -10,7 +10,7 @@
  * rich text, and file fields.
  */
 
-import type { TranslationProvider } from './types';
+import type { TranslationProvider, StreamCallbacks } from './types';
 import { buildClient } from '@datocms/cma-client-browser';
 import type { ExecuteFieldDropdownActionCtx } from 'datocms-plugin-sdk';
 import { 
@@ -27,15 +27,8 @@ import { createLogger } from '../logging/Logger';
 import { getProvider } from './ProviderFactory';
 import { normalizeProviderError } from './ProviderErrors';
 
-/**
- * Defines the callback interface for streaming translation results.
- */
-export type StreamCallbacks = {
-  onStream?: (chunk: string) => void;
-  onComplete?: () => void;
-  checkCancellation?: () => boolean;
-  abortSignal?: AbortSignal;
-};
+// Re-export StreamCallbacks for backwards compatibility
+export type { StreamCallbacks } from './types';
 
 /**
  * Routes field translation to the appropriate specialized translator based on field type

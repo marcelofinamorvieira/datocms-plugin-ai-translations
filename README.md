@@ -14,21 +14,24 @@ See the [CHANGELOG.md](./CHANGELOG.md) file for details about all the latest fea
 
 On the plugin's Settings screen:
 
-1. **AI Vendor**: Choose your provider — OpenAI (ChatGPT), Google (Gemini), or Anthropic (Claude).
+1. **AI Vendor**: Choose your provider — OpenAI (ChatGPT), Google (Gemini), Anthropic (Claude), or DeepL.
 2. If you chose OpenAI:
    - **OpenAI API Key**: Paste a valid OpenAI key.
-   - **GPT Model**: After entering your key, the plugin lists relevant chat models and highlights a recommended default.
-     - Default: gpt‑4.1‑mini (fastest and broadly available)
-     - High‑stakes short copy: gpt‑4.1
-     - Large or budget batches: gpt‑4o‑mini
+   - **GPT Model**: After entering your key, the plugin lists available chat models. Select a model from the dropdown.
 3. If you chose Google (Gemini):
    - **Google API Key**: Paste a valid key from a GCP project with the Generative Language API enabled.
-   - **Gemini Model**: Recommended `gemini-2.5-flash` (fast/cost‑effective default). For the highest fidelity, use `gemini-2.5-pro`. For very large or budget batches, consider `gemini-2.5-flash-lite`.
-4. **Translatable Field Types**: Pick which field editor types (single_line, markdown, structured_text, etc.) can be translated.
-5. **Translate Whole Record**: Enable the sidebar that translates every localized field in a record.
-6. **Translate Bulk Records**: Enable bulk translations from table view or via the dedicated page.
-7. **AI Bulk Translations Page**: Translate whole models at once.
-8. **Prompt Template**: Customize how translations are requested. Use `{fieldValue}`, `{fromLocale}`, `{toLocale}`, and `{recordContext}`.
+   - **Gemini Model**: Select a model from the dropdown.
+4. If you chose Anthropic (Claude):
+   - **Anthropic API Key**: Paste a valid Anthropic key.
+   - **Claude Model**: Select a model from the dropdown.
+5. If you chose DeepL:
+   - **DeepL API Key**: Paste your DeepL API key.
+   - **Use DeepL Free endpoint**: Enable this if your key ends with `:fx` (Free plan).
+6. **Translatable Field Types**: Pick which field editor types (single_line, markdown, structured_text, etc.) can be translated.
+7. **Translate Whole Record**: Enable the sidebar that translates every localized field in a record.
+8. **Translate Bulk Records**: Enable bulk translations from table view or via the dedicated page.
+9. **AI Bulk Translations Page**: Translate whole models at once.
+10. **Prompt Template** (AI vendors only): Customize how translations are requested. Use `{fieldValue}`, `{fromLocale}`, `{toLocale}`, and `{recordContext}`.
 
 ### Key Restrictions and Security
 - Keys are stored in plugin settings and used client‑side. Do not share your workspace publicly.
@@ -38,8 +41,8 @@ On the plugin's Settings screen:
 - The plugin redacts API keys from debug logs automatically.
 
 _**Models**_
-- OpenAI: the list is dynamic for your account; the plugin filters out embeddings, audio/whisper/tts, moderation, image, and realtime models, prioritizing general-purpose chat models used for translation.
-- Google: provides a fixed list in settings (`gemini-1.5-flash` and `gemini-1.5-pro`).
+- OpenAI: the model list is fetched dynamically for your account; the plugin filters out embeddings, audio/whisper/tts, moderation, image, and realtime models.
+- Google: the model list is fetched dynamically from the Generative Language API.
 
 Save your changes. The plugin is now ready.
 
@@ -135,167 +138,6 @@ You can customize the translation prompt template in the plugin settings:
 - **Model Not Found**: Verify the exact model id exists for your account/region and is spelled correctly.
 - **Localization**: Make sure your project has at least two locales, otherwise translation actions won't appear.
 
-## DeepL Requires a Proxy (Why and How)
-
-DeepL’s API does not support browser‑origin requests (no CORS). If you call DeepL directly from the plugin (which runs in the browser), the preflight request fails and you’ll see network/CORS errors. To use DeepL in this plugin, you must route requests through a small server you control (a “proxy”).
-
-What the proxy must do
-- Accept a POST with JSON body that matches DeepL’s `/v2/translate` input. The plugin sends bodies like:
-  - `{ "text": ["Hello"], "target_lang": "DE", ... }`
-- Add CORS headers to the response (at minimum `Access-Control-Allow-Origin: *` for testing; you can restrict later).
-- Forward the request to DeepL’s API with the Authorization header added server‑side:
-  - `Authorization: DeepL-Auth-Key <YOUR_KEY>`
-- Choose the proper upstream host:
-  - Free keys (end with `:fx`) → `https://api-free.deepl.com`
-  - Pro keys → `https://api.deepl.com`
-
-Plugin settings to use with a proxy
-- In Settings → DeepL, set “Proxy URL” to the base of your function (examples below) — the plugin will call `POST <proxy>/v2/translate`.
-- If your key ends with `:fx`, also enable “Use DeepL Free endpoint (api-free.deepl.com)” so validation and error messages match your plan.
-- Use the “Test proxy” button: we send a tiny "Hello world" test, and show inline success/error feedback.
-
-Security notes
-- Never expose the DeepL key in the browser. Keep it in your serverless function/env.
-- For production, restrict CORS to `https://admin.datocms.com` and your own preview domains instead of `*`.
-- Do not log request bodies or headers; avoid leaving keys in logs.
-
-### Option A: Cloudflare Workers
-
-Environment vars
-- `DEEPL_AUTH_KEY` — your DeepL key
-- `DEEPL_BASE_URL` — `https://api-free.deepl.com` (Free) or `https://api.deepl.com` (Pro)
-
-Worker (wrangler.toml configured; minimal example)
-```
-export default {
-  async fetch(req, env) {
-    const cors = {
-      'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Headers': '*',
-    };
-    if (req.method === 'OPTIONS') return new Response(null, { headers: cors });
-
-    const url = new URL(req.url);
-    const isFree = url.searchParams.get('endpoint') === 'free';
-    const baseUrl = isFree ? 'https://api-free.deepl.com' : 'https://api.deepl.com';
-    const upstream = new URL('/v2/translate', baseUrl);
-
-    const body = await req.text(); // passthrough JSON body
-
-    const resp = await fetch(upstream, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `DeepL-Auth-Key ${env.DEEPL_AUTH_KEY}`,
-      },
-      body,
-    });
-
-    const text = await resp.text();
-    return new Response(text, { status: resp.status, headers: { ...cors, 'Content-Type': 'application/json' } });
-  }
-}
-```
-
-Deploy
-- `wrangler deploy`
-- Set `DEEPL_AUTH_KEY` and `DEEPL_BASE_URL` in your Worker’s environment.
-- Copy the Worker URL (e.g., `https://your-worker.yourname.workers.dev`) into the plugin’s “Proxy URL”.
-
-### Option B: Vercel Serverless Function (Next.js API Route)
-
-Environment vars (Project Settings → Environment Variables):
-- `DEEPL_AUTH_KEY` — your key
-- `DEEPL_BASE_URL` — `https://api-free.deepl.com` or `https://api.deepl.com`
-
-Create `pages/api/deepl.ts` (or `app/api/deepl/route.ts` for App Router):
-```
-export default async function handler(req, res) {
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Headers', '*');
-  if (req.method === 'OPTIONS') return res.status(204).end();
-
-  const isFree = req.query.endpoint === 'free';
-  const baseUrl = isFree ? 'https://api-free.deepl.com' : 'https://api.deepl.com';
-  const upstream = `${baseUrl}/v2/translate`;
-
-  const r = await fetch(upstream, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `DeepL-Auth-Key ${process.env.DEEPL_AUTH_KEY}`,
-    },
-    body: JSON.stringify(req.body ?? {}),
-  });
-  const text = await r.text();
-  res.status(r.status).setHeader('Content-Type', 'application/json').send(text);
-}
-```
-
-Deploy
-- `vercel deploy` (or push to GitHub with Vercel connected).
-- Set env vars, redeploy, then use `https://your-app.vercel.app/api/deepl` as the “Proxy URL”.
-
-Note on Vercel Deployment Protection
-- If your Vercel organization enforces Deployment Protection, unauthenticated public requests return 401.
-- Go to Vercel → Project → Settings → Deployment Protection and either disable protection for this project or add a public bypass so DatoCMS can call the endpoint.
-- After changing this setting, the proxy should be reachable from the plugin’s “Test proxy” and during translations.
-
-### Option C: Netlify Functions
-
-Environment vars (Netlify dashboard → Site settings → Environment):
-- `DEEPL_AUTH_KEY`, `DEEPL_BASE_URL`
-
-Create `netlify/functions/deepl-proxy.ts`:
-```
-export const handler = async (event) => {
-  if (event.httpMethod === 'OPTIONS') {
-    return { statusCode: 204, headers: { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': '*' } };
-  }
-
-  const isFree = event.queryStringParameters?.endpoint === 'free';
-  const baseUrl = isFree ? 'https://api-free.deepl.com' : 'https://api.deepl.com';
-  const upstream = `${baseUrl}/v2/translate`;
-
-  const r = await fetch(upstream, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `DeepL-Auth-Key ${process.env.DEEPL_AUTH_KEY}`,
-    },
-    body: event.body || '{}',
-  });
-  const text = await r.text();
-  return {
-    statusCode: r.status,
-    headers: { 'Access-Control-Allow-Origin': '*', 'Content-Type': 'application/json' },
-    body: text,
-  };
-};
-```
-
-Deploy
-- `netlify deploy` (or via the Netlify app/CLI). Use `/.netlify/functions/deepl-proxy` as your “Proxy URL”.
-
-### Testing and common errors
-
-- Use the “Test proxy” button in plugin settings to verify connectivity.
-- Wrong endpoint for key (403 / “Wrong endpoint”):
-  - Free key (`…:fx`) must target `api-free.deepl.com`. Pro keys must target `api.deepl.com`.
-  - Fix by setting `DEEPL_BASE_URL` accordingly (and/or toggle “Use DeepL Free endpoint” in the plugin).
-- CORS errors: ensure your proxy responds to OPTIONS and includes `Access-Control-Allow-Origin`.
-- 414/URI too long: means you’re not POSTing a body through your proxy. The examples above use POST and won’t hit this.
-- 429/Rate limit: lower concurrency or try smaller batches; upgrade plan if needed.
-
-Endpoint selection (Free vs Pro)
-- The example proxies choose the upstream via an environment variable `DEEPL_BASE_URL`.
-- Set `DEEPL_BASE_URL` to `https://api-free.deepl.com` if your key ends with `:fx` (DeepL Free), otherwise to `https://api.deepl.com` (Pro).
-- In the plugin settings, the toggle “Use DeepL Free endpoint (api-free.deepl.com)” should match the proxy’s `DEEPL_BASE_URL` so errors and validations are consistent. A mismatch will surface as a “Wrong endpoint for your API key” error.
-
-That’s it — once your proxy passes the test, DeepL translations (including large Structured Text fields) will work end‑to‑end.
-
-
-
 ## DeepL Glossaries
 
 The plugin supports DeepL glossaries to enforce preferred terminology. You can set a default glossary ID and/or map specific language pairs to specific glossary IDs. This works for all field types, including Structured Text.
@@ -303,15 +145,14 @@ The plugin supports DeepL glossaries to enforce preferred terminology. You can s
 ### Requirements
 
 - A DeepL API key with access to Glossaries. Check your DeepL account/plan capabilities.
-- The same proxy described above; translations with a glossary still call `POST <proxy>/v2/translate` with an extra `glossary_id` in the JSON body.
 
 ### Configure in the Plugin
 
-1. Open Settings → vendor “DeepL”.
-2. Set “Proxy URL” and verify it via “Test proxy”.
-3. Expand “Advanced settings”.
-4. Optional: set “Default glossary ID” (e.g., `gls-abc123`).
-5. Optional: fill in “Glossaries by language pair” with one mapping per line.
+1. Open Settings → vendor "DeepL".
+2. Enter your DeepL API Key and verify it via "Test API Key".
+3. Expand "Advanced settings".
+4. Optional: set "Default glossary ID" (e.g., `gls-abc123`).
+5. Optional: fill in "Glossaries by language pair" with one mapping per line.
 
 You can use either DatoCMS locales (e.g., `en-US`, `pt-BR`) or DeepL codes (e.g., `EN`, `PT-BR`). The plugin normalizes both to DeepL codes internally.
 
@@ -394,14 +235,14 @@ curl -X POST https://api.deepl.com/v2/glossaries \
 
 Note: If your account uses the Free endpoint, replace the host with `https://api-free.deepl.com`.
 
-You do not need to expose `/v2/glossaries` through your proxy for the plugin to work — it only calls `/v2/translate`. Manage glossaries from your server/CLI, then paste the resulting IDs into the plugin settings.
+Manage glossaries from your server/CLI or the DeepL dashboard, then paste the resulting IDs into the plugin settings.
 
 ### Tips and Limitations
 
 - Glossaries apply only to the DeepL vendor. OpenAI/Gemini/Anthropic do not use glossaries.
 - The plugin preserves placeholders and HTML tags automatically (`notranslate`, `ph`, etc.). Glossaries will not alter those tokens.
-- If you use DeepL “formality”, it is sent only for targets that support it; otherwise omitted.
-- A wrong Pro/Free endpoint for your key will still raise the “Wrong endpoint” hint shown in settings and translation errors.
+- If you use DeepL "formality", it is sent only for targets that support it; otherwise omitted.
+- Ensure your API key matches the endpoint setting: Free keys (ending with `:fx`) should have "Use DeepL Free endpoint" enabled.
 
 ### Quick Sanity Test
 
@@ -416,6 +257,13 @@ You do not need to expose `/v2/glossaries` through your proxy for the plugin to 
   1. In Google Cloud, enable the Generative Language API for your project.
   2. Create an API key and restrict it by HTTP referrer if possible.
   3. In the plugin settings, switch vendor to Google (Gemini), paste the key, and select a Gemini model.
+- To use Anthropic (Claude):
+  1. Get an API key from the Anthropic Console.
+  2. In the plugin settings, switch vendor to Anthropic (Claude), paste the key, and select a Claude model.
+- To use DeepL:
+  1. Get an API key from your DeepL account (Pro or Free).
+  2. In the plugin settings, switch vendor to DeepL and paste the key.
+  3. If using a Free key (ends with `:fx`), enable "Use DeepL Free endpoint".
 
 ## License
 

@@ -3,6 +3,7 @@ import { Canvas, SelectField, Button, Spinner } from 'datocms-react-ui';
 import { useEffect, useState } from 'react';
 import { buildDatoCMSClient } from '../../utils/clients';
 import type { ctxParamsType } from '../../entrypoints/Config/ConfigScreen';
+import { isProviderConfigured } from '../../utils/translation/ProviderFactory';
 import s from './AIBulkTranslationsPage.module.css';
 // Light local equivalents of react-select types to avoid adding the package
 type SingleValue<T> = T | null;
@@ -99,13 +100,7 @@ export default function AIBulkTranslationsPage({ ctx }: PropTypes) {
     }
     
     const pluginParams = ctx.plugin.attributes.parameters as ctxParamsType;
-    const vendor = (pluginParams.vendor as 'openai'|'google'|'anthropic'|'deepl') ?? 'openai';
-    const hasOpenAI = !!pluginParams.apiKey && !!pluginParams.gptModel && pluginParams.gptModel !== 'None';
-    const hasGoogle = !!pluginParams.googleApiKey && !!pluginParams.geminiModel;
-    const hasAnthropic = !!pluginParams.anthropicApiKey && !!pluginParams.anthropicModel;
-    const hasDeepL = !!(pluginParams as any).deeplProxyUrl;
-    const configured = vendor === 'google' ? hasGoogle : vendor === 'anthropic' ? hasAnthropic : vendor === 'deepl' ? hasDeepL : hasOpenAI;
-    if (!configured) {
+    if (!isProviderConfigured(pluginParams)) {
       ctx.alert('Please configure valid credentials for the selected AI vendor in the plugin settings');
       return;
     }

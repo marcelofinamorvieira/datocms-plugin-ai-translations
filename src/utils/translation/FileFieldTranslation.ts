@@ -12,20 +12,10 @@
  * - Stream translation progress back to the UI
  */
 
-import type { TranslationProvider } from './types';
+import type { TranslationProvider, StreamCallbacks } from './types';
 import { normalizeProviderError } from './ProviderErrors';
 import type { ctxParamsType } from '../../entrypoints/Config/ConfigScreen';
 import { createLogger } from '../logging/Logger';
-
-/**
- * Interface for streaming translation updates to the UI.
- */
-type StreamCallbacks = {
-  onStream?: (chunk: string) => void;
-  onComplete?: () => void;
-  checkCancellation?: () => boolean;
-  abortSignal?: AbortSignal;
-};
 
 /**
  * Translates metadata for file and gallery fields

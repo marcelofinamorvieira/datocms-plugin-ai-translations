@@ -35,3 +35,19 @@ export interface TranslationProvider {
   /** Single-shot text completion when streaming is not used. */
   completeText(prompt: string, options?: StreamOptions): Promise<string>;
 }
+
+/**
+ * Callback interface for streaming translation results.
+ * Used across translation modules to handle progress updates,
+ * completion notifications, and cancellation.
+ */
+export type StreamCallbacks = {
+  /** Called with accumulated content as translation streams in. */
+  onStream?: (chunk: string) => void;
+  /** Called when translation completes successfully. */
+  onComplete?: () => void;
+  /** Returns true if user has requested cancellation. */
+  checkCancellation?: () => boolean;
+  /** Abort signal for cancelling in-flight requests. */
+  abortSignal?: AbortSignal;
+};

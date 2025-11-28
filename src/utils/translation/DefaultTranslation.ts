@@ -12,20 +12,10 @@
  * - Supporting contextual information to improve translation quality
  */
 
-import type { TranslationProvider } from './types';
+import type { TranslationProvider, StreamCallbacks } from './types';
 import { normalizeProviderError } from './ProviderErrors';
 import type { ctxParamsType } from '../../entrypoints/Config/ConfigScreen';
 import { createLogger } from '../logging/Logger';
-
-/**
- * Interface for handling streaming responses during translation.
- */
-type StreamCallbacks = {
-  onStream?: (chunk: string) => void;
-  onComplete?: () => void;
-  checkCancellation?: () => boolean;
-  abortSignal?: AbortSignal;
-};
 
 /**
  * Translates a basic text field value using OpenAI's language model
@@ -75,25 +65,4 @@ export async function translateDefaultFieldValue(
     logger.error(`Translation error: ${normalized.message}`, { code: normalized.code, hint: normalized.hint });
     throw new Error(normalized.message);
   }
-}
-
-/**
- * Type guard to verify if a provided object is a valid StreamCallbacks instance
- * 
- * This utility function helps validate that a given object conforms to the
- * StreamCallbacks interface before attempting to use its methods. It performs
- * runtime type checking to ensure the callback functions exist and are of the
- * correct type.
- * 
- * @param callbacks - The object to check
- * @returns True if the object is a valid StreamCallbacks instance
- */
-export function isValidStreamCallbacks(callbacks: unknown): callbacks is { onStream?: (chunk: string) => void; onComplete?: () => void; checkCancellation?: () => boolean; abortSignal?: AbortSignal } {
-  if (!callbacks) return false;
-  const cb = callbacks as { onStream?: unknown; onComplete?: unknown; checkCancellation?: unknown; abortSignal?: unknown };
-  return typeof cb === 'object' && 
-    (typeof cb.onStream === 'function' || cb.onStream === undefined) &&
-    (typeof cb.onComplete === 'function' || cb.onComplete === undefined) &&
-    (typeof cb.checkCancellation === 'function' || cb.checkCancellation === undefined) &&
-    (typeof cb.abortSignal === 'object' || cb.abortSignal === undefined);
 }

@@ -49,6 +49,7 @@ const localeSelect = locale.getByTag;
 
 // Import refactored utility functions and types
 import { parseActionId } from './utils/translation/ItemsDropdownUtils';
+import { isProviderConfigured } from './utils/translation/ProviderFactory';
 
 /**
  * Helper function to get nested values by dot/bracket notation
@@ -76,61 +77,44 @@ function getValueAtPath(obj: Record<string, unknown> | unknown[], path: string):
 connect({
   onBoot(ctx) {
     const pluginParams = ctx.plugin.attributes.parameters as ctxParamsType;
-    const vendor = (pluginParams.vendor as 'openai'|'google'|'anthropic'|'deepl') ?? 'openai';
+    
+    // Collect all missing default values in a single object
+    const defaults: Partial<ctxParamsType> = {};
+    
     if (!pluginParams.vendor) {
-      ctx.updatePluginParameters({ ...pluginParams, vendor: 'openai' });
+      defaults.vendor = 'openai';
     }
-    const hasOpenAI = !!pluginParams.apiKey && !!pluginParams.gptModel && pluginParams.gptModel !== 'None';
-    const hasGoogle = !!pluginParams.googleApiKey && !!pluginParams.geminiModel;
-    const hasAnthropic = !!(pluginParams as any).anthropicApiKey && !!(pluginParams as any).anthropicModel;
-    const hasDeepL = !!(pluginParams as any).deeplProxyUrl;
-    const hasCreds = vendor === 'google' ? hasGoogle : vendor === 'anthropic' ? hasAnthropic : vendor === 'deepl' ? hasDeepL : hasOpenAI;
-    if (!hasCreds) {
-      ctx.alert('Please configure credentials for the selected AI vendor in the settings page');
-    }
-
-    // Set default values for undefined parameters
     if (!pluginParams.translationFields) {
-      ctx.updatePluginParameters({
-        ...pluginParams,
-        translationFields: Object.keys(translateFieldTypes),
-      });
+      defaults.translationFields = Object.keys(translateFieldTypes);
     }
     if (typeof pluginParams.translateWholeRecord === 'undefined') {
-      ctx.updatePluginParameters({
-        ...pluginParams,
-        translateWholeRecord: true,
-      });
+      defaults.translateWholeRecord = true;
     }
     if (!pluginParams.prompt) {
-      ctx.updatePluginParameters({
-        ...pluginParams,
-        prompt: defaultPrompt,
-      });
+      defaults.prompt = defaultPrompt;
     }
     if (!pluginParams.modelsToBeExcludedFromThisPlugin) {
-      ctx.updatePluginParameters({
-        ...pluginParams,
-        modelsToBeExcludedFromThisPlugin: [],
-      });
+      defaults.modelsToBeExcludedFromThisPlugin = [];
     }
     if (!pluginParams.rolesToBeExcludedFromThisPlugin) {
-      ctx.updatePluginParameters({
-        ...pluginParams,
-        rolesToBeExcludedFromThisPlugin: [],
-      });
+      defaults.rolesToBeExcludedFromThisPlugin = [];
     }
     if (!pluginParams.apiKeysToBeExcludedFromThisPlugin) {
-      ctx.updatePluginParameters({
-        ...pluginParams,
-        apiKeysToBeExcludedFromThisPlugin: [],
-      });
+      defaults.apiKeysToBeExcludedFromThisPlugin = [];
     }
     if (!pluginParams.gptModel) {
-      ctx.updatePluginParameters({
-        ...pluginParams,
-        gptModel: 'gpt-4o-mini',
-      });
+      defaults.gptModel = 'gpt-4o-mini';
+    }
+    
+    // Apply all defaults in a single update call if any are needed
+    if (Object.keys(defaults).length > 0) {
+      ctx.updatePluginParameters({ ...pluginParams, ...defaults });
+    }
+    
+    // Check if provider is configured after applying defaults
+    const effectiveParams = { ...pluginParams, ...defaults };
+    if (!isProviderConfigured(effectiveParams as ctxParamsType)) {
+      ctx.alert('Please configure credentials for the selected AI vendor in the settings page');
     }
   },
 
@@ -263,6 +247,7 @@ connect({
         id: 'datoGptTranslateSidebar',
         label: 'DatoGPT Translate',
         placement: ['after', 'info'],
+        startOpen: true,
       },
     ];
   },
@@ -275,20 +260,19 @@ connect({
     ctx: RenderItemFormSidebarPanelCtx
   ) {
     const pluginParams = ctx.plugin.attributes.parameters as ctxParamsType;
-    const vendor = pluginParams.vendor ?? 'openai';
-    const hasOpenAI = !!pluginParams.apiKey && !!pluginParams.gptModel && pluginParams.gptModel !== 'None';
-    const hasGoogle = !!pluginParams.googleApiKey && !!pluginParams.geminiModel;
-    const configured = vendor === 'google' ? hasGoogle : hasOpenAI;
-    if (!configured) {
+    if (!isProviderConfigured(pluginParams)) {
       return render(
         <Canvas ctx={ctx}>
+          <p style={{ marginBottom: 'var(--spacing-m)', textAlign: 'center' }}>
+            Please configure valid credentials in plugin settings.
+          </p>
           <Button
             fullWidth
             onClick={() =>
               ctx.navigateTo(`/configuration/plugins/${ctx.plugin.id}/edit`)
             }
           >
-            Please configure valid credentials in plugin settings
+            Open Settings
           </Button>
         </Canvas>
       );
@@ -319,11 +303,7 @@ connect({
     const pluginParams = ctx.plugin.attributes.parameters as ctxParamsType;
 
     // If plugin is not properly configured, show an error action
-    const vendor = pluginParams.vendor ?? 'openai';
-    const hasOpenAI = !!pluginParams.apiKey && !!pluginParams.gptModel && pluginParams.gptModel !== 'None';
-    const hasGoogle = !!pluginParams.googleApiKey && !!pluginParams.geminiModel;
-    const configured = vendor === 'google' ? hasGoogle : hasOpenAI;
-    if (!configured) {
+    if (!isProviderConfigured(pluginParams)) {
       return [
         {
           id: 'not-configured',
