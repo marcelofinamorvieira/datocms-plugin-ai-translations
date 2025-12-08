@@ -27,7 +27,7 @@ export function parseGlossaryMap(input?: string): Record<string, string> {
   const lines = String(input).split(/\r?\n|[;,]+/).map((l) => l.trim()).filter(Boolean);
   for (const line of lines) {
     // Split into pair and id
-    const m = line.match(/^(.*?)\s*(?:=|:|\s)\s*(gls-[A-Za-z0-9_-]+)\s*$/i);
+    const m = line.match(/^(.*?)\s*(?:=|:|\s)\s*((?:gls-)?[A-Za-z0-9_-]+)\s*$/i);
     if (!m) continue;
     let pair = m[1].replace(/\s/g, '');
     const id = m[2];
