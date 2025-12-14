@@ -428,6 +428,8 @@ export default function ConfigScreen({ ctx }: { ctx: RenderConfigScreenCtx }) {
     deeplNonSplittingTags,
     deeplSplittingTags,
     deeplApiKey,
+    deeplGlossaryId,
+    deeplGlossaryPairs,
     modelsToBeExcluded,
     rolesToBeExcluded,
     apiKeysToBeExcluded,
